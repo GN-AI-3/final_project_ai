@@ -6,10 +6,13 @@ import json
 from ..models.input_models import ExerciseRecommendationInput
 from ..prompts.system_prompts import WORKOUT_RECOMMENDATION_PROMPT
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize the LLM
 llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
+    model="gpt-4o-mini",
     temperature=0.7
 )
 

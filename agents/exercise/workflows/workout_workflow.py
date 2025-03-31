@@ -8,10 +8,13 @@ from ..models.state_models import WorkoutState
 from ..tools.analysis_tools import analyze_user_info
 from ..tools.recommendation_tools import recommend_exercises, generate_workout_plan
 from ..tools.feedback_tools import adjust_plan_based_on_feedback
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # LLM 초기화
 llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
+    model="gpt-4o-mini",
     temperature=0.7
 )
 
