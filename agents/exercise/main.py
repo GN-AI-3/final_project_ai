@@ -1,6 +1,6 @@
-from agents.agent_exercise.agents.workout_agent import chat_with_workout_agent
-from agents.agent_exercise.workflows.workout_workflow import create_workout_workflow
-from agents.agent_exercise.models.state_models import WorkoutState
+from agents.exercise.agents.workout_agent import chat_with_workout_agent
+from agents.exercise.workflows.workout_workflow import create_workout_workflow
+from agents.exercise.models.state_models import WorkoutState
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 import json
 
