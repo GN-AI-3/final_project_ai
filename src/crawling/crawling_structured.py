@@ -76,6 +76,13 @@ def extract_media_elements(article):
     
     return media_data
 
+def normalize_text(text):
+    """텍스트에서 불필요한 공백을 제거하고 정규화합니다."""
+    if not text:
+        return text
+    # 모든 종류의 공백을 단일 공백으로 정규화
+    return ' '.join(text.split())
+
 def extract_classification_table(section):
     content = {}
     
@@ -88,8 +95,8 @@ def extract_classification_table(section):
             # 행의 모든 셀 처리
             cells = row.find_all(['td', 'th'])
             if len(cells) >= 2:
-                key = cells[0].get_text(strip=True)
-                value = cells[1].get_text(strip=True)
+                key = normalize_text(cells[0].get_text())
+                value = normalize_text(cells[1].get_text())
                 if key and value:
                     content[key] = value
     
@@ -113,22 +120,22 @@ def extract_section_content(section):
             # strong 태그가 있는 경우
             strong = current.find('strong')
             if strong:
-                key = strong.get_text(strip=True)
+                key = normalize_text(strong.get_text())
                 # strong 태그 이후의 텍스트를 값으로 사용
                 value = strong.next_sibling
                 if value:
-                    value = value.get_text(strip=True)
+                    value = normalize_text(value.get_text())
                 if key and value:
                     content[key] = value
             else:
                 # strong 태그가 없는 경우
-                text = current.get_text(strip=True)
+                text = normalize_text(current.get_text())
                 if text:
                     # 이전 요소가 strong 태그가 있는 p 태그인지 확인
                     prev_p = current.find_previous('p')
                     if prev_p and prev_p.find('strong'):
                         # 이전 p 태그의 strong 태그가 키가 됨
-                        key = prev_p.find('strong').get_text(strip=True)
+                        key = normalize_text(prev_p.find('strong').get_text())
                         if key in content:
                             if isinstance(content[key], str):
                                 content[key] = [content[key]]
@@ -138,7 +145,7 @@ def extract_section_content(section):
                     else:
                         # 이전에 strong 태그가 있는 p 태그가 없다면
                         # 섹션 이름(h2 태그)이 키가 됨
-                        section_name = section.get_text(strip=True)
+                        section_name = normalize_text(section.get_text())
                         if section_name in content:
                             if isinstance(content[section_name], str):
                                 content[section_name] = [content[section_name]]
@@ -148,41 +155,70 @@ def extract_section_content(section):
         elif current.name == 'ul':
             # ul 태그의 모든 li 태그를 처리
             li_items = []
+            processed_items = set()  # 중복 방지를 위한 집합
+            
             for li in current.find_all('li', recursive=False):  # 최상위 li만 처리
-                li_text = li.get_text(strip=True)
+                li_text = normalize_text(li.get_text())
                 if li_text:
                     # 중첩된 ul이 있는지 확인
                     nested_ul = li.find('ul')
                     if nested_ul:
-                        # 중첩된 ul이 있는 경우, 상위 li의 텍스트를 키로 사용
-                        nested_items = [nested_li.get_text(strip=True) for nested_li in nested_ul.find_all('li')]
+                        # 중첩된 ul이 있는 경우, 상위 li의 텍스트를 키로 사용하고 중첩된 li들의 텍스트를 값으로 사용
+                        nested_items = [normalize_text(nested_li.get_text()) for nested_li in nested_ul.find_all('li')]
                         if nested_items:
-                            li_items.append({li_text: nested_items})
-                        else:
-                            li_items.append(li_text)
+                            # 상위 li의 텍스트에서 중첩된 항목들의 텍스트를 제거
+                            parent_text = li_text
+                            for nested_item in nested_items:
+                                if nested_item in parent_text:
+                                    parent_text = parent_text.replace(nested_item, '').strip()
+                            if parent_text:
+                                # 중첩된 항목들을 처리된 항목 집합에 추가
+                                for item in nested_items:
+                                    processed_items.add(item)
+                                li_items.append({parent_text: nested_items})
                     else:
-                        li_items.append(li_text)
+                        # 중첩된 ul이 없는 경우, 중복되지 않은 항목만 추가
+                        if li_text not in processed_items:
+                            processed_items.add(li_text)
+                            li_items.append(li_text)
             
             if li_items:
-                # 이전 요소가 strong 태그가 있는 p 태그인지 확인
+                # ul 태그의 이전 p 태그 중 가장 가까운 strong 태그를 가진 p 태그 찾기
                 prev_p = current.find_previous('p')
+                while prev_p and not prev_p.find('strong'):
+                    prev_p = prev_p.find_previous('p')
+                
                 if prev_p and prev_p.find('strong'):
                     # 이전 p 태그의 strong 태그가 키가 됨
-                    key = prev_p.find('strong').get_text(strip=True)
+                    key = normalize_text(prev_p.find('strong').get_text())
                     if key in content:
                         if isinstance(content[key], str):
                             content[key] = [content[key]]
-                        content[key].extend(li_items)
+                        # 중복되지 않은 항목만 추가
+                        for item in li_items:
+                            if isinstance(item, dict):
+                                # 딕셔너리인 경우 (중첩된 항목)
+                                content[key].append(item)
+                            elif item not in processed_items:
+                                # 문자열인 경우 (일반 항목)
+                                content[key].append(item)
                     else:
                         content[key] = li_items
                 else:
                     # 이전에 strong 태그가 있는 p 태그가 없다면
                     # 섹션 이름(h2 태그)이 키가 됨
-                    section_name = section.get_text(strip=True)
+                    section_name = normalize_text(section.get_text())
                     if section_name in content:
                         if isinstance(content[section_name], str):
                             content[section_name] = [content[section_name]]
-                        content[section_name].extend(li_items)
+                        # 중복되지 않은 항목만 추가
+                        for item in li_items:
+                            if isinstance(item, dict):
+                                # 딕셔너리인 경우 (중첩된 항목)
+                                content[section_name].append(item)
+                            elif item not in processed_items:
+                                # 문자열인 경우 (일반 항목)
+                                content[section_name].append(item)
                     else:
                         content[section_name] = li_items
         current = current.find_next()
