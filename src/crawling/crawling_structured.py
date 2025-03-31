@@ -221,7 +221,13 @@ def extract_section_content(section):
                                 content[section_name].append(item)
                     else:
                         content[section_name] = li_items
-        current = current.find_next()
+        
+        # 다음 요소 찾기 (연속된 p와 li 태그를 모두 처리하기 위해)
+        next_element = current.find_next()
+        if next_element and next_element.name in ['p', 'li']:
+            current = next_element
+        else:
+            current = next_element
     
     return content
 
