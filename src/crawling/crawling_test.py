@@ -95,7 +95,7 @@ def get_all_info_from_page(driver, url, name):
             remaining_text = muscles_text
             
             # 1. Target (항상 존재)
-            exercise_data["Muscles"]["Target"] = remaining_text.split("Synergists")[0].strip()
+            exercise_data["Muscles"]["Target"] = remaining_text.split("Synergists")[0].strip().replace("\n", ", ")
             
             # 2. Synergists (항상 존재)
             # 다음 섹션 찾기
@@ -108,9 +108,9 @@ def get_all_info_from_page(driver, url, name):
                     break
             
             if next_section:
-                exercise_data["Muscles"]["Synergists"] = remaining_text.split(next_section)[0].strip()
+                exercise_data["Muscles"]["Synergists"] = remaining_text.split(next_section)[0].strip().replace("\n", ", ")
             else:
-                exercise_data["Muscles"]["Synergists"] = remaining_text.split("Exercise Directory")[0].strip()
+                exercise_data["Muscles"]["Synergists"] = remaining_text.split("Exercise Directory")[0].strip().replace("\n", ", ")
                 remaining_text = ""
             
             # 3. Dynamic Stabilizers (선택적)
@@ -176,6 +176,7 @@ def save_progress(exercise_data):
 
 def main():
     driver = setup_driver()
+    failed_exercises = []  # 실패한 운동 이름을 저장할 리스트
     
     try:
         # 프로젝트 루트 디렉토리 경로 설정 (data/src -> data -> project root)
@@ -189,12 +190,25 @@ def main():
                 if len(row) < 2:
                     continue
                 name, url = row
-                page_data = get_all_info_from_page(driver, url, name)
-                save_progress(page_data)
+                try:
+                    page_data = get_all_info_from_page(driver, url, name)
+                    save_progress(page_data)
+                except Exception as e:
+                    log_progress(f"🚨 {name} 처리 중 오류 발생: {str(e)}")
+                    failed_exercises.append(name)
     except Exception as e:
         log_progress(f"🚨 전체 오류 발생: {str(e)}")
     finally:
         driver.quit()
+        
+        # 실패한 운동 목록 출력
+        if failed_exercises:
+            log_progress("\n📊 실패한 운동 목록:")
+            for exercise in failed_exercises:
+                log_progress(f"- {exercise}")
+            log_progress(f"\n총 {len(failed_exercises)}개의 운동이 실패했습니다.")
+        else:
+            log_progress("\n✨ 모든 운동이 성공적으로 처리되었습니다!")
 
 if __name__ == "__main__":
     main()
