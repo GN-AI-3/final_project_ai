@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from agents.supervisor import Supervisor
+from supervisor import Supervisor
 
 async def main():
     # 환경 변수 로드

@@ -53,14 +53,13 @@ final_project_ai/
 │   ├── general/              # 일반 기능 에이전트
 │   ├── schedule/             # 일정 관련 에이전트
 │   ├── base_agent.py         # 기본 에이전트 클래스
-│   ├── specialized_agents.py # 특수 에이전트 구현
-│   ├── supervisor.py         # 에이전트 감독자
 │   └── __init__.py
-|
+│
 ├── main.py                   # 메인 실행 파일
+├── supervisor.py             # 에이전트 감독자
 ├── requirements.txt          # 의존성 패키지 목록
 ├── .env                      # 환경 변수 설정
-└── .gitignore               # Git 제외 파일 목록
+└── .gitignore                # Git 제외 파일 목록
 ```
 
 ## 설치 및 실행

@@ -1,14 +1,14 @@
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
-from .specialized_agents import ExerciseAgent, DietAgent, ScheduleAgent, GeneralAgent
+from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent
 
 class Supervisor:
     def __init__(self, model: ChatOpenAI):
         self.model = model
         self.agents = {
             "exercise": ExerciseAgent(model),
-            "diet": DietAgent(model),
+            "food": FoodAgent(model),
             "schedule": ScheduleAgent(model),
             "general": GeneralAgent(model)
         }
@@ -17,7 +17,7 @@ class Supervisor:
         prompt = ChatPromptTemplate.from_messages([
             ("system", """다음 카테고리 중 하나로 메시지를 분류해주세요:
             - exercise: 운동, 운동 방법, 운동 효과 등
-            - diet: 식단, 영양, 음식 등
+            - food: 식단, 영양, 음식 등
             - schedule: 일정, 시간 관리, 계획 등
             - general: 위 카테고리에 속하지 않는 일반적인 대화
             
