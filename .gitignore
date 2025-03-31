@@ -12,6 +12,7 @@ venv/
 env/
 .env/
 ENV/
+.env
 
 # IDE 설정 파일
 # Python
