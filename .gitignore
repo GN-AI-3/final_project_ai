@@ -10,7 +10,7 @@ data/
 # 가상 환경
 venv/
 env/
-.env/
+.env
 
 # IDE 설정 파일
 .idea/
