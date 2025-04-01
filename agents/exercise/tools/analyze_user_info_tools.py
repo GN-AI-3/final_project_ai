@@ -1,7 +1,8 @@
 from typing import Dict, List
 from langchain.tools import tool
 from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
+from ..models.state_models import WorkoutState
+from langchain_core.messages import AIMessage
 
 class AnalysisInput(BaseModel):
     exercise_history: str = Field(..., description="운동 경력 (예: '1년', '6개월')")
@@ -59,3 +60,29 @@ def analyze_user_info(exercise_history: str, age: int, weight: float, height: fl
         "weekly_workout_days": weekly_workout_days,
         "bmi": bmi
     } 
+
+@tool()
+def get_user_database(state: WorkoutState) -> WorkoutState:
+    """사용자 정보 DB에서 가져오기"""
+    # DB 연동해서 데이터 값 가져오기
+
+    state["messages"].append(AIMessage(content="사용자 DB 조회"))
+
+    return {
+        "messages": state["messages"],
+        "user_info": {
+            "user_id": state["user_info"]["user_id"],
+            "exercise_history": "1년",
+            "age": 25,
+            "weight": 70,
+            "height": 175,
+            "injuries": ["허리 통증"],
+            "goals": ["근력 향상", "체력 향상"],
+            "available_equipment": ["덤벨", "바벨", "매트"],
+            "preferred_workout_time": "아침",
+            "weekly_workout_days": 3
+        },
+        "current_step": state["current_step"],
+        "workout_plan": state["workout_plan"],
+        "feedback": state["feedback"]
+    }

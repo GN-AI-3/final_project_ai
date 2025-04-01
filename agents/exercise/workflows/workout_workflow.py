@@ -5,7 +5,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 import json
 from ..models.state_models import WorkoutState
-from ..tools.analysis_tools import analyze_user_info
+from ..tools.analyze_user_info_tools import analyze_user_info
 from ..tools.recommendation_tools import recommend_exercises, generate_workout_plan
 from ..tools.feedback_tools import adjust_plan_based_on_feedback
 from dotenv import load_dotenv
@@ -142,6 +142,17 @@ def create_workout_workflow():
     workflow = StateGraph(WorkoutState)
     
     # Add nodes
+    # workflow.add_node("analyze_user_info", analyze_user_info)
+    # 사용자 DB 조회 -> 사용자 정보를 토대로 키워드 추출 (타겟 근육, 운동 경력 등)
+    # workflow.add_node("target_muscle", target_muscle")
+    # 키워드 추출 -> 운동 추천
+    # workflow.add_node("web_search", web_search)
+    # 웹 검색 기반 운동 추천
+    # workflow.add_node("merge_exercise", merge_exercise)
+    # 웹 검색 기반 운동과 키워드 기반 운동 병합
+    # workflow.add_node("judge_exercise", judge_exercise)
+    # 추천 운동이 적합한지 판단
+
     workflow.add_node("generate", generate_plan)
     workflow.add_node("collect_feedback", collect_feedback)
     workflow.add_node("finalize", finalize_plan)
@@ -151,14 +162,5 @@ def create_workout_workflow():
     workflow.add_edge("generate", "collect_feedback")
     workflow.add_edge("collect_feedback", "finalize")
     workflow.add_edge("finalize", END)
-    
-    # 초기 상태 설정
-    initial_state: WorkoutState = {
-        "messages": [],
-        "user_info": {},
-        "current_step": "start",
-        "workout_plan": {},
-        "feedback": {}
-    }
     
     return workflow.compile() 

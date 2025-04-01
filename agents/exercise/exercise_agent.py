@@ -30,19 +30,11 @@ class ExerciseAgent(BaseAgent):
         
         # 초기 상태 설정
         initial_state: WorkoutState = {
-            "messages": [{"type": "human", "content": message}],  # HumanMessage 객체 대신 딕셔너리 사용
+            "messages": [{"type": "human", "content": message}],
             "user_info": {
-                "exercise_history": "1년",
-                "age": 25,
-                "weight": 70,
-                "height": 175,
-                "injuries": ["허리 통증"],
-                "goals": ["근력 향상", "체력 향상"],
-                "available_equipment": ["덤벨", "바벨", "매트"],
-                "preferred_workout_time": "아침",
-                "weekly_workout_days": 3
+                "user_id": "1"
             },
-            "current_step": "start",
+            "current_step": "",
             "workout_plan": {},
             "feedback": {}
         }
@@ -66,5 +58,5 @@ class ExerciseAgent(BaseAgent):
         
         print("\n운동 계획에 대해 추가로 궁금하신 점이 있으시다면 말씀해 주세요!")
 
-        response = main()
-        return {"type": "exercise", "response": response.content} 
+        # response = main()
+        # return {"type": "exercise", "response": response.content} 

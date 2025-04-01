@@ -1,12 +1,12 @@
 from typing import Dict, Any
 from ..models.state_models import WorkoutState
-from ..tools.analysis_tools import get_user_info, analyze_user_info
+from ..tools.analyze_user_info_tools import get_user_database, analyze_user_info
 from langchain_core.messages import AIMessage
 
-def analyze_user_info_node(state: WorkoutState) -> WorkoutState:
-    """사용자 정보 분석 및 초기화"""
+def get_user_info(state: WorkoutState) -> WorkoutState:
+    """사용자 정보 DB에서 가져오기"""
     # 사용자 정보 가져오기
-    user_info = get_user_info.invoke({})
+    user_info = get_user_database(state)
     
     # 사용자 정보 분석
     analysis_result = analyze_user_info.invoke(user_info)
