@@ -1,7 +1,13 @@
 from langgraph.graph import StateGraph, END, START
-from langchain_openai import ChatOpenAI
 from ..nodes.routing_node import routing
 from ..models.state_models import RoutingState
+from ..nodes.exercise_routine_node import exercise_routine_agent
+from ..nodes.exercise_form_node import exercise_form_agent
+from ..nodes.exercise_direction_node import exercise_direction_agent
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # def generate_plan(state: WorkoutState) -> WorkoutState:
 #     """회원 분석 후 초기 운동 계획 생성"""
@@ -124,6 +130,11 @@ from ..models.state_models import RoutingState
 
 def create_workout_workflow():
     """운동 워크플로우 생성"""
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.7
+    )
+
     workflow = StateGraph(RoutingState)
     
     # Add nodes
@@ -139,15 +150,21 @@ def create_workout_workflow():
     # 추천 운동이 적합한지 판단
 
     # 노드 추가
-    workflow.add_node("routing", routing)
+    workflow.add_node("routing", lambda state: routing(state, llm))
+    workflow.add_node("exercise_routine", lambda state: exercise_routine_agent(state, llm))
+    workflow.add_node("exercise_form", lambda state: exercise_form_agent(state, llm))
+    workflow.add_node("exercise_direction", lambda state: exercise_direction_agent(state, llm))    
 
     # 엣지 추가
     workflow.add_edge(START, "routing")
-    workflow.add_edge("routing", END)
-
-    # workflow.add_node("generate", generate_plan)
-    # workflow.add_node("collect_feedback", collect_feedback)
-    # workflow.add_node("finalize", finalize_plan)
+    workflow.add_conditional_edges(
+        "routing", lambda state: state.category,
+        {
+            "운동 루틴": "exercise_routine",
+            "운동 자세": "exercise_form",
+            "운동 방향성": "exercise_direction"
+        }
+    )
     
     # # Add edges
     # workflow.add_edge(START, "generate")

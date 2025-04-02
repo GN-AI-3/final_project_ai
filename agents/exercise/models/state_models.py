@@ -2,6 +2,7 @@ from typing import TypedDict, List, Dict, Any
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -30,10 +31,6 @@ class WorkoutState(TypedDict):
     #     "feedback": {}
     # }
 
-class RoutingState(TypedDict):
+class RoutingState(BaseModel):
     message: str
-    llm: ChatOpenAI = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.7
-    )
     category: str = "exercise"
