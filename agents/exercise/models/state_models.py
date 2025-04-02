@@ -1,5 +1,9 @@
 from typing import TypedDict, List, Dict, Any
 from langchain_core.messages import BaseMessage
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class WorkoutState(TypedDict):
     messages: List[BaseMessage]
@@ -25,3 +29,11 @@ class WorkoutState(TypedDict):
     #     "workout_plan": {},
     #     "feedback": {}
     # }
+
+class RoutingState(TypedDict):
+    message: str
+    llm: ChatOpenAI = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.7
+    )
+    category: str = "exercise"

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List
+from typing import Dict, List, Any
 
 class UserInfoInput(BaseModel):
     exercise_history: str = Field(..., description="운동 경력 (예: '1년', '6개월')")

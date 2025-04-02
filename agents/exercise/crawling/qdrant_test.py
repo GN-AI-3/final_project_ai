@@ -67,6 +67,13 @@ def process_json_files():
             
             # 운동 데이터를 텍스트로 변환
             exercise_text = prepare_exercise_text(exercise_data)
+
+            # chunking by langchain
+            # text_splitter = RecursiveCharacterTextSplitter(
+            #     chunk_size=1000,
+            #     chunk_overlap=200
+            # )
+            # chunks = text_splitter.split_text(exercise_text)
             
             # 텍스트 임베딩 생성
             embedding = model.encode(exercise_text)
