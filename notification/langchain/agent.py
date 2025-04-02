@@ -8,14 +8,14 @@ from typing import Dict, Optional, List, Any
 
 from langchain_openai import ChatOpenAI
 
-from gym_attendance.notification.tools import (
+from notification.langchain.tools import (
     get_user_data,
     get_all_user_ids,
     send_push_notification,
     get_attendance_rate,
     generate_notification_message
 )
-from gym_attendance.database.connection import get_db_connection
+from notification.database.connection import get_db_connection
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -101,8 +101,8 @@ def process_user_notification(user_id: str, update_fcm_token: Optional[str] = No
                 cursor.execute("""
                     UPDATE member
                     SET fcm_token = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
+                        modified_at = CURRENT_TIMESTAMP
+                    WHERE email = %s
                 """, (update_fcm_token, user_id))
                 conn.commit()
                 logger.info(f"회원 ID {user_id}의 FCM 토큰이 데이터베이스에 업데이트되었습니다.")

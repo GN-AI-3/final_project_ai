@@ -7,8 +7,8 @@ from typing import Dict, List, Optional, Any
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from gym_attendance.database.connection import get_db_connection
-from gym_attendance.notification.prompts import get_praise_prompt, get_encouragement_prompt, get_motivation_prompt
+from notification.database.connection import get_db_connection
+from notification.langchain.prompts import get_praise_prompt, get_encouragement_prompt, get_motivation_prompt
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ def get_user_data(user_id: str) -> Dict[str, Any]:
     특정 회원의 데이터를 조회합니다.
     
     Args:
-        user_id: 조회할 회원 ID
+        user_id: 조회할 회원 ID (이메일)
         
     Returns:
         Dict: 회원 데이터
@@ -32,9 +32,9 @@ def get_user_data(user_id: str) -> Dict[str, Any]:
         
         # 회원 기본 정보 조회
         cursor.execute("""
-            SELECT id, name, email, fcm_token, role, goal
+            SELECT email, name, email, fcm_token, phone
             FROM member
-            WHERE id = %s
+            WHERE email = %s
         """, (user_id,))
         
         user = cursor.fetchone()
@@ -44,6 +44,34 @@ def get_user_data(user_id: str) -> Dict[str, Any]:
             
         logger.info(f"회원 정보 조회 성공: {user[1]}")
         
+        # 회원 목표 조회
+        cursor.execute("""
+            SELECT goal
+            FROM member_goal_list
+            WHERE email = %s
+        """, (user_id,))
+        
+        goal_row = cursor.fetchone()
+        personal_goal = "건강 유지"  # 기본값
+        
+        if goal_row:
+            # 목표 타입을 사용자 친화적인 메시지로 변환
+            goal_type = goal_row[0]
+            if goal_type == "WEIGHT_LOSS":
+                personal_goal = "체중 감량"
+            elif goal_type == "STRENGTH":
+                personal_goal = "신체 능력 강화"
+            elif goal_type == "MENTAL_HEALTH":
+                personal_goal = "정신적 건강 관리"
+            elif goal_type == "HEALTH_MAINTENANCE":
+                personal_goal = "건강 유지"
+            elif goal_type == "BODY_SHAPE":
+                personal_goal = "체형 관리"
+            elif goal_type == "HOBBY":
+                personal_goal = "취미"
+            else:
+                personal_goal = goal_type  # 알 수 없는 유형은 그대로 사용
+        
         # 출석률 계산 (invoke 메서드 사용)
         attendance_rate = get_attendance_rate.invoke(user_id)
         
@@ -52,8 +80,7 @@ def get_user_data(user_id: str) -> Dict[str, Any]:
             "name": user[1],
             "email": user[2],
             "fcm_token": user[3],
-            "role": user[4],
-            "personal_goal": user[5],
+            "personal_goal": personal_goal,
             "attendance_rate": attendance_rate
         }
         
@@ -70,7 +97,7 @@ def get_all_user_ids(unused_input: str = "") -> List[str]:
     모든 회원의 ID를 조회합니다.
     
     Returns:
-        List[str]: 회원 ID 목록
+        List[str]: 회원 ID 목록 (이메일)
     """
     try:
         logger.info("모든 회원 ID 조회 시작")
@@ -78,12 +105,11 @@ def get_all_user_ids(unused_input: str = "") -> List[str]:
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT id
+            SELECT email
             FROM member
-            WHERE role = 'member'
         """)
         
-        user_ids = [str(row[0]) for row in cursor.fetchall()]
+        user_ids = [row[0] for row in cursor.fetchall()]
         logger.info(f"{len(user_ids)}명의 회원 ID 조회 완료")
         return user_ids
         
@@ -100,7 +126,7 @@ def get_attendance_rate(user_id: str) -> float:
     특정 회원의 출석률을 계산합니다. 최근 일주일 스케줄 기준으로 계산합니다.
     
     Args:
-        user_id: 회원 ID
+        user_id: 회원 ID (이메일)
         
     Returns:
         float: 출석률 (0-100)
@@ -113,9 +139,9 @@ def get_attendance_rate(user_id: str) -> float:
         # 최근 7일간의 스케줄 및 출석 상태 조회
         cursor.execute("""
             WITH days_with_schedule AS (
-                SELECT DISTINCT weekday
-                FROM member_schedule
-                WHERE member_id = %s AND is_active = true
+                SELECT DISTINCT day_of_week
+                FROM schedule
+                WHERE member_id = %s AND active = true
             ),
             last_7_days AS (
                 SELECT date_trunc('day', (current_date - offs)) AS day_date,
@@ -125,7 +151,7 @@ def get_attendance_rate(user_id: str) -> float:
             scheduled_days AS (
                 SELECT l.day_date
                 FROM last_7_days l
-                JOIN days_with_schedule d ON l.day_of_week = d.weekday
+                JOIN days_with_schedule d ON l.day_of_week = d.day_of_week
             ),
             attendance_days AS (
                 SELECT COUNT(DISTINCT attendance_date) AS attended_count
@@ -133,7 +159,7 @@ def get_attendance_rate(user_id: str) -> float:
                 WHERE member_id = %s 
                 AND attendance_date >= current_date - INTERVAL '7 days'
                 AND attendance_date <= current_date
-                AND status = '출석'
+                AND status = 'PRESENT'
             ),
             total_scheduled AS (
                 SELECT COUNT(*) AS total_count FROM scheduled_days

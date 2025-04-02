@@ -4,8 +4,8 @@
 import argparse
 import logging
 import os
-from gym_attendance.api.server import start_server
-from gym_attendance.utils.logging import setup_logger
+from notification.api.server import start_server
+from notification.utils.logging import setup_logger
 
 # 메인 로거 설정
 logger = setup_logger('main')
