@@ -6,22 +6,41 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
+from operator import itemgetter
 
 # 환경변수 로드
 load_dotenv()
 
 # 챗봇 프롬프트 템플릿 정의
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "당신은 Question-Answering 챗봇입니다. 주어진 질문에 대한 답변을 제공해주세요."),
-    MessagesPlaceholder(variable_name="chat_history"),  # 대화 기록 저장용
-    ("human", "#Question:\n{question}")  # 사용자 입력
-])
+prompt = ChatPromptTemplate.from_template(
+    """You are an assistant for question-answering tasks.
+    Use the following pieces of retrieved context to answer the question.
+    If you don't know the answer, just say that you don't know.
+    Answer in Korean.
+
+    #Previous Chat History:
+    {chat_history}
+
+    #Question:
+    {question}
+
+    #Answer:
+    """
+)
 
 # LLM 모델 초기화
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
 # 챗봇 체인 구성
-chain = prompt | llm | StrOutputParser()
+chain = (
+    {
+        "question": itemgetter("question"),
+        "chat_history": itemgetter("chat_history"),
+    }
+    | prompt
+    | llm
+    | StrOutputParser()
+)
 
 # 세션별 대화 기록 저장소
 store = {}
@@ -49,16 +68,23 @@ def print_chat_response(question, response):
     print(f"응답: {response}")
     print("="*50 + "\n")
 
-# 테스트 대화 1: 사용자 정보 입력
-response1 = chain_with_history.invoke(
-    {"question": "나의 이름은 테디입니다."},
-    config={"configurable": {"session_id": "abc123"}}
-)
-print_chat_response("나의 이름은 테디입니다.", response1)
+def chat_with_bot():
+    """사용자와 챗봇이 대화를 주고받는 함수"""
+    print("챗봇과 대화를 시작합니다. 종료하려면 '종료'를 입력하세요.")
+    session_id = "user_session"  # 세션 ID 설정
+    
+    while True:
+        user_input = input("\n당신: ")
+        
+        if user_input.lower() == "종료":
+            print("대화를 종료합니다.")
+            break
+            
+        response = chain_with_history.invoke(
+            {"question": user_input},
+            config={"configurable": {"session_id": session_id}}
+        )
+        print_chat_response(user_input, response)
 
-# 테스트 대화 2: 이전 대화를 참고한 질문
-response2 = chain_with_history.invoke(
-    {"question": "내 이름이 뭐라고?"},
-    config={"configurable": {"session_id": "abc123"}}
-)
-print_chat_response("내 이름이 뭐라고?", response2)
+if __name__ == "__main__":
+    chat_with_bot()
