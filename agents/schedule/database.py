@@ -13,4 +13,5 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
     
 pg_uri = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
         
-db = SQLDatabase.from_uri(pg_uri) 
+db = SQLDatabase.from_uri(pg_uri)
+ 

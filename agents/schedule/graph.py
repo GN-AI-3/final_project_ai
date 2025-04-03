@@ -12,12 +12,14 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]
 
 def ai_assistant_node(state: State):
+    """AI 어시스턴트의 응답을 생성하고 출력합니다."""
     messages = state["messages"]
     ai_response = call_chatbot(messages)
     print(f"\033[1;32m예약 도우미\033[0m: {ai_response}")
     return {"messages": messages + [AIMessage(content=ai_response)]}
 
 def user_node(state: State):
+    """사용자 입력을 받아 처리합니다."""
     print("\n")
     user_input = input(f"\033[1;36m사용자\033[0m: ")
     if user_input.strip().upper() == "종료":
@@ -25,11 +27,13 @@ def user_node(state: State):
     return {"messages": state["messages"] + [HumanMessage(content=user_input)]}
 
 def should_continue(state: State):
+    """대화를 계속할지 결정합니다."""
     if state["messages"][-1].content == "종료":
         return "end"
     return "continue"
 
 def build_graph():
+    """대화 그래프를 구성합니다."""
     graph_builder = StateGraph(State)
 
     # 노드 추가
@@ -53,6 +57,7 @@ def build_graph():
     return graph_builder.compile()
 
 def run_graph_simulation():
+    """그래프 시뮬레이션을 실행합니다."""
     simulation = build_graph()
     visualize_graph(simulation)
 
