@@ -62,14 +62,6 @@ chain_with_history = RunnableWithMessageHistory(
     history_messages_key="chat_history"
 )
 
-def print_chat_response(question, response):
-    """챗봇 응답을 포맷팅하여 출력하는 함수"""
-    print("\n" + "="*50)
-    print(f"질문: {question}")
-    print("-"*50)
-    print(f"응답: {response}")
-    print("="*50 + "\n")
-
 def chat_with_bot():
     """사용자와 챗봇이 대화를 주고받는 함수"""
     print("챗봇과 대화를 시작합니다. 종료하려면 '종료'를 입력하세요.")
@@ -86,7 +78,7 @@ def chat_with_bot():
             {"question": user_input},
             config={"configurable": {"session_id": session_id}}
         )
-        print_chat_response(user_input, response)
+        print(f"응답: {response}\n")
 
 if __name__ == "__main__":
     chat_with_bot()
