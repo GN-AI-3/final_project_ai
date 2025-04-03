@@ -1,0 +1,176 @@
+CREATE TABLE members (
+    member_id SERIAL PRIMARY KEY,  -- 자동 증가하는 고유 식별자
+    name VARCHAR(50) NOT NULL,     -- 이름 (한글 이름 고려하여 50자)
+    gender CHAR(1) NOT NULL,       -- 성별 (M/F)
+    height DECIMAL(5,2),           -- 키 (cm 단위, 소수점 2자리까지)
+    weight DECIMAL(5,2),           -- 몸무게 (kg 단위, 소수점 2자리까지)
+    birth DATE NOT NULL,           -- 생년월일
+    goal TEXT,                     -- 목표 (자유로운 텍스트 입력)
+    etc TEXT,                      -- 기타 정보 (자유로운 텍스트 입력)
+    phone_number VARCHAR(15) NOT NULL,  -- 전화번호 (하이픈 포함 고려)
+    fcm_token TEXT,                -- Firebase Cloud Messaging 토큰
+    temp_id VARCHAR(50),           -- 임시 ID (비회원 예약용)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 생성 시간
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP   -- 수정 시간
+);
+
+-- 전화번호 유니크 제약조건 추가
+ALTER TABLE members ADD CONSTRAINT unique_phone_number UNIQUE (phone_number);
+
+-- 성별 체크 제약조건 추가
+ALTER TABLE members ADD CONSTRAINT check_gender CHECK (gender IN ('M', 'F'));
+
+-- 키와 몸무게 체크 제약조건 추가
+ALTER TABLE members ADD CONSTRAINT check_height CHECK (height > 0 AND height < 300);
+ALTER TABLE members ADD CONSTRAINT check_weight CHECK (weight > 0 AND weight < 500);
+
+-- 인덱스 생성
+CREATE INDEX idx_members_phone_number ON members(phone_number);
+CREATE INDEX idx_members_temp_id ON members(temp_id);
+
+CREATE TABLE trainers (
+    trainer_id SERIAL PRIMARY KEY,  -- 자동 증가하는 고유 식별자
+    email VARCHAR(100) NOT NULL,    -- 이메일 주소
+    password VARCHAR(255) NOT NULL, -- 비밀번호 (해시된 값 저장)
+    name VARCHAR(50) NOT NULL,      -- 이름
+    profile_image TEXT,             -- 프로필 이미지 URL
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 생성 시간
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 수정 시간
+    last_login_at TIMESTAMP,        -- 마지막 로그인 시간
+    is_active BOOLEAN DEFAULT true  -- 계정 활성화 상태
+);
+
+-- 이메일 유니크 제약조건 추가
+ALTER TABLE trainers ADD CONSTRAINT unique_trainer_email UNIQUE (email);
+
+-- 이메일 형식 체크 제약조건 추가
+ALTER TABLE trainers ADD CONSTRAINT check_email_format 
+    CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
+
+-- 인덱스 생성
+CREATE INDEX idx_trainers_email ON trainers(email);
+
+CREATE TABLE pt_linked (
+    pt_linked_id SERIAL PRIMARY KEY,  -- 자동 증가하는 고유 식별자
+    member_id INTEGER NOT NULL,       -- members 테이블의 member_id 참조
+    trainer_id INTEGER NOT NULL,      -- trainers 테이블의 trainer_id 참조
+    total_count INTEGER NOT NULL,     -- 총 PT 횟수
+    remain_count INTEGER NOT NULL,    -- 남은 PT 횟수
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 생성 시간
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 수정 시간
+    is_active BOOLEAN DEFAULT true,   -- 활성화 상태
+    CONSTRAINT fk_member FOREIGN KEY (member_id) REFERENCES members(member_id),
+    CONSTRAINT fk_trainer FOREIGN KEY (trainer_id) REFERENCES trainers(trainer_id),
+    CONSTRAINT check_count CHECK (remain_count >= 0 AND remain_count <= total_count)
+);
+
+-- 인덱스 생성
+CREATE INDEX idx_pt_linked_member ON pt_linked(member_id);
+CREATE INDEX idx_pt_linked_trainer ON pt_linked(trainer_id);
+CREATE INDEX idx_pt_linked_remain ON pt_linked(remain_count);
+
+-- 1. 기존 트리거 삭제
+DROP TRIGGER IF EXISTS set_reservation_no_trigger ON reservations;
+DROP TRIGGER IF EXISTS update_reservations_updated_at ON reservations;
+DROP TRIGGER IF EXISTS check_reservation_state ON reservations;
+
+-- 2. 기존 함수 삭제
+DROP FUNCTION IF EXISTS generate_reservation_no();
+DROP FUNCTION IF EXISTS set_reservation_no();
+DROP FUNCTION IF EXISTS update_updated_at_column();
+DROP FUNCTION IF EXISTS update_reservation_state();
+
+-- 3. 예약 번호 생성을 위한 함수 (간소화된 버전)
+CREATE OR REPLACE FUNCTION generate_reservation_no()
+RETURNS VARCHAR AS $$
+DECLARE
+    random_digits VARCHAR;
+BEGIN
+    -- 5자리 랜덤 숫자 생성
+    random_digits := LPAD(FLOOR(RANDOM() * 100000)::TEXT, 5, '0');
+    -- YYMMDD_5자리랜덤 형태로 반환
+    RETURN TO_CHAR(CURRENT_DATE, 'YYMMDD') || '_' || random_digits;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 4. 트리거에서 사용할 함수 생성
+CREATE OR REPLACE FUNCTION set_reservation_no()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.reservation_no := generate_reservation_no();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 5. 트리거 생성
+CREATE TRIGGER set_reservation_no_trigger
+    BEFORE INSERT ON reservations
+    FOR EACH ROW
+    EXECUTE FUNCTION set_reservation_no();
+
+-- 6. updated_at 자동 업데이트 함수
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- 7. updated_at 자동 업데이트 트리거
+CREATE TRIGGER update_reservations_updated_at
+    BEFORE UPDATE ON reservations
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- 8. 예약 상태 변경 함수
+CREATE OR REPLACE FUNCTION update_reservation_state()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- 예약 시간이 지났고 상태가 confirmed인 경우 no_show로 변경
+    IF NEW.start_time < CURRENT_TIMESTAMP AND NEW.state = 'confirmed' THEN
+        NEW.state := 'no_show';
+        NEW.reason := '연락 없음';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 9. 예약 상태 변경 트리거
+CREATE TRIGGER check_reservation_state
+    BEFORE INSERT OR UPDATE ON reservations
+    FOR EACH ROW
+    EXECUTE FUNCTION update_reservation_state();
+
+-- 10. 미래 예약의 no_show 상태를 confirmed로 변경
+UPDATE reservations
+SET state = 'confirmed',
+    reason = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE start_time > CURRENT_TIMESTAMP
+AND state = 'no_show';
+
+-- 11. 기존 예약 번호 업데이트
+UPDATE reservations
+SET reservation_no = TO_CHAR(created_at, 'YYMMDD') || '_' || 
+                    LPAD(FLOOR(RANDOM() * 100000)::TEXT, 5, '0'),
+    updated_at = CURRENT_TIMESTAMP;
+
+-- 4. reservations 테이블 생성
+CREATE TABLE reservations (
+    reservation_id SERIAL PRIMARY KEY,
+    pt_linked_id INTEGER NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    state VARCHAR(20) NOT NULL DEFAULT 'confirmed',
+    reason TEXT,
+    reservation_no VARCHAR(11) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (pt_linked_id) REFERENCES pt_linked(pt_linked_id)
+);
+
+-- 5. 인덱스 생성
+CREATE INDEX idx_reservations_pt_linked_id ON reservations(pt_linked_id);
+CREATE INDEX idx_reservations_start_time ON reservations(start_time);
+CREATE INDEX idx_reservations_state ON reservations(state);

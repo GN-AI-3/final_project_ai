@@ -13,6 +13,7 @@ class State(TypedDict):
 
 def ai_assistant_node(state: State):
     """AI 어시스턴트의 응답을 생성하고 출력합니다."""
+    print("\n")
     messages = state["messages"]
     ai_response = call_chatbot(messages)
     print(f"\033[1;32m예약 도우미\033[0m: {ai_response}")
@@ -61,7 +62,7 @@ def run_graph_simulation():
     simulation = build_graph()
     visualize_graph(simulation)
 
-    config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "1"})
+    config = RunnableConfig(recursion_limit=2147483647, configurable={"thread_id": "5"})
 
     # supervisor로부터 최초로 받는 메시지(input)
     inputs = {
