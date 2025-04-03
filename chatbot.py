@@ -7,6 +7,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from operator import itemgetter
+from langchain_core.chat_history import InMemoryChatMessageHistory
 
 # 환경변수 로드
 load_dotenv()
@@ -43,19 +44,20 @@ chain = (
 )
 
 # 세션별 대화 기록 저장소
-store = {}
+chats_by_session_id  = {}
 
-def get_session_history(session_ids):
-    """세션 ID에 해당하는 대화 기록을 반환하는 함수"""
-    print(f"[대화 세션ID]: {session_ids}")
-    if session_ids not in store:
-        store[session_ids] = ChatMessageHistory()
-    return store[session_ids]
+def get_chat_history(session_id: str) -> InMemoryChatMessageHistory:
+    """주어진 세션 ID에 대한 대화 기록을 반환하는 함수"""
+    chat_history = chats_by_session_id.get(session_id)
+    if chat_history is None:
+        chat_history = InMemoryChatMessageHistory()
+        chats_by_session_id[session_id] = chat_history
+    return chat_history
 
 # 대화 기록이 포함된 체인 생성
 chain_with_history = RunnableWithMessageHistory(
     chain,
-    get_session_history,
+    get_chat_history,
     input_messages_key="question",
     history_messages_key="chat_history"
 )
