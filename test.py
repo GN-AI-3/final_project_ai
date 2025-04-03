@@ -55,7 +55,13 @@ def search_recall_memories(query: str, config: RunnableConfig) -> List[str]:
     )
     return [document.page_content for document in documents]
 
-tools = [save_recall_memory, search_recall_memories]
+@tool
+def ask_user(query: str, config: RunnableConfig) -> str:
+    """사용자에게 추가 입력을 요청하는 툴"""
+   
+    return input(f"AI: {query} \n 사용자: ")
+
+tools = [save_recall_memory, search_recall_memories, ask_user]
 
 class State(MessagesState):
     # add memories that will be retrieved based on the conversation context
@@ -71,7 +77,9 @@ prompt = ChatPromptTemplate.from_messages(
             " external memory to store information between conversations."
             " Utilize the available memory tools to store and retrieve"
             " important details that will help you better attend to the user's"
-            " needs and understand their context.\n\n"
+            " needs and understand their context. "
+            "If any requirements or details are unclear, "
+            "ask follow-up questions to ensure a precise and helpful response.\n\n"
             "Memory Usage Guidelines:\n"
             "1. Actively use memory tools (save_core_memory, save_recall_memory)"
             " to build a comprehensive understanding of the user.\n"
