@@ -5,7 +5,6 @@ import os
 from dotenv import load_dotenv
 
 import tiktoken
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.messages import get_buffer_string
@@ -56,8 +55,7 @@ def search_recall_memories(query: str, config: RunnableConfig) -> List[str]:
     )
     return [document.page_content for document in documents]
 
-search = TavilySearchResults(max_results=1)
-tools = [save_recall_memory, search_recall_memories, search]
+tools = [save_recall_memory, search_recall_memories]
 
 class State(MessagesState):
     # add memories that will be retrieved based on the conversation context
@@ -197,26 +195,3 @@ builder.add_edge("tools", "agent")
 # Compile the graph
 memory = MemorySaver()
 graph = builder.compile(checkpointer=memory)
-
-def pretty_print_stream_chunk(chunk):
-    for node, updates in chunk.items():
-        print(f"Update from node: {node}")
-        if "messages" in updates:
-            updates["messages"][-1].pretty_print()
-        else:
-            print(updates)
-
-        print("\n")
-
-
-# NOTE: we're specifying `user_id` to save memories for a given user
-config = {"configurable": {"user_id": "1", "thread_id": "1"}}
-
-while True:
-    user_input = input("사용자 입력: ")  # 사용자로부터 입력 받기
-    if user_input.lower() in ["exit", "quit"]:  # 종료 조건
-        print("대화를 종료합니다.")
-        break
-
-    for chunk in graph.stream({"messages": [("user", user_input)]}, config=config):
-        pretty_print_stream_chunk(chunk)
