@@ -23,11 +23,9 @@ recall_vector_store = InMemoryVectorStore(OpenAIEmbeddings())
 import uuid
 
 def get_user_id(config: RunnableConfig) -> str:
-    print("Config received:", config)
     user_id = config["configurable"].get("user_id")
     if user_id is None:
         raise ValueError("User ID needs to be provided to save a memory.")
-    print("User ID retrieved:", user_id)
     return user_id
 
 
