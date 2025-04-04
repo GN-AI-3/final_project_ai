@@ -1,25 +1,19 @@
-from datetime import datetime, timedelta
-from langchain.agents import tool
-from database import db
-from utils.date_utils import validate_date_format
-from utils.general_utils import generate_reservation_no, format_schedule_result
-
 from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
+from langchain.agents import tool
+from core.database import execute_query
+from utils.date_utils import validate_date_format
+from utils.general_utils import format_schedule_result, format_reservation_result
+from utils.reservation_validator import check_same_day, check_future_date, check_existing_reservation
+from typing import Optional
 
 @tool
 def get_user_schedule(input: str) -> str:
     """사용자의 예약 일정을 조회합니다."""
     try:
-        # pt_linked_id 추출 (예제: input에서 id를 받아오는 방식으로 변경 가능)
         pt_linked_id = 5
         
-        # 쿼리 실행
         query = f"""
-        SELECT start_time,
-        reservation_no
+        SELECT start_time, reservation_no
         FROM reservations
         WHERE pt_linked_id = {pt_linked_id}
         AND start_time > CURRENT_TIMESTAMP
@@ -27,143 +21,180 @@ def get_user_schedule(input: str) -> str:
         ORDER BY start_time
         """
         
-        results = db.run(query)
-        
-        # 결과를 general_utils의 format_schedule_result 함수로 전달
-        return format_schedule_result(str(results))
+        results = execute_query(query)
+        formatted_result = format_schedule_result(str(results))
+        return formatted_result
         
     except Exception as e:
         return f"일정 조회 중 오류가 발생했습니다: {str(e)}"
 
-
-def _check_same_day(start_dt: datetime) -> str:
-    """당일 예약 여부를 확인합니다."""
-    now = datetime.now()
-    if (start_dt.year == now.year and 
-        start_dt.month == now.month and 
-        start_dt.day == now.day):
-        return "죄송해요. 당일 예약은 불가능해요. 오늘 이후의 날짜를 선택해주세요."
-    return None
-
-def _check_future_date(start_dt: datetime) -> str:
-    """미래 날짜 여부를 확인합니다."""
-    now = datetime.now()
-    if start_dt <= now:
-        return "죄송해요. 과거 시간으로는 예약할 수 없어요. 오늘 이후의 날짜를 선택해주세요."
-    return None
-
-def _check_date_diff(start_dt: datetime, user_response: str = None) -> str:
-    """예약 날짜와 현재 날짜의 차이를 확인합니다."""
-    now = datetime.now()
-    date_diff = (start_dt.date() - now.date()).days
-    
-    if date_diff >= 28:
-        if user_response and user_response.lower() in ['예', '네', 'yes', 'y']:
-            return None
-        return f"예약하려는 날짜가 {date_diff}일 후예요. 먼 미래의 예약은 변경이나 취소가 어려울 수 있어요. 그래도 계속 진행하시겠어요? (계속하려면 '예'라고 입력해주세요)"
-    return None
-
-def _check_existing_reservation(start_dt: datetime, end_dt: datetime) -> str:
-    """해당 시간대에 이미 예약이 있는지 확인합니다."""
-    
-    check_query = f"""
-    SELECT COUNT(*)
-    FROM reservations
-    WHERE pt_linked_id = 5
-    AND (
-        (start_time <= '{start_dt}' AND end_time > '{start_dt}')
-        OR (start_time < '{end_dt}' AND end_time >= '{end_dt}')
-        OR (start_time >= '{start_dt}' AND end_time <= '{end_dt}')
-    );
-    """
-    
-    result = db.run(check_query)
-    
-    if result and result != "데이터가 없어요.":
-        try:
-            count = eval(result)[0][0]
-            if count > 0:
-                return "죄송해요. 해당 시간대에 이미 예약이 있어요. 다른 시간으로 예약해보시는 건 어떨까요?"
-        except Exception as e:
-            return f"죄송해요. 예약 확인 중에 오류가 발생했어요: {str(e)}"
-    return None
-
 @tool
 def add_reservation(day: str, hour: int, month: str = None, user_response: str = None) -> str:
-    """예약을 추가합니다.
-    
-    Args:
-        day: 예약할 날짜 (YYYY-MM-DD 형식 또는 '내일', '모레' 등)
-        hour: 예약할 시간 (0-23)
-        month: 예약할 월 (선택사항)
-        user_response: 사용자의 응답 (선택사항)
-        
-    Returns:
-        str: 예약 결과 메시지
-    """
+    """예약을 추가합니다."""
     try:
-        # 현재 날짜 출력
-        now = datetime.now()
-        logger.info(f"시스템 현재 날짜와 시간: {now}")
+        # month가 None이 아닌 경우 문자열로 변환
+        month_str = str(month) if month is not None else None
+        start_dt, end_dt = validate_date_format(day, str(hour), month_str)
         
-        # 날짜와 시간 검증
-        start_dt, end_dt = validate_date_format(day, str(hour), month)
         if start_dt is None:
-            return end_dt  # 에러 메시지 반환
-            
-        logger.info(f"검증된 예약 시작 시간: {start_dt}")
-        logger.info(f"검증된 예약 종료 시간: {end_dt}")
-        
-        # 1. 당일 예약 체크
-        error = _check_same_day(start_dt)
+            return end_dt
+
+        # 1. 당일 예약 방지
+        error = check_same_day(start_dt)
         if error:
             return error
-            
-        # 2. 미래 날짜 체크
-        error = _check_future_date(start_dt)
+
+        # 2. 과거 날짜 예약 방지
+        error = check_future_date(start_dt)
         if error:
             return error
-            
-        # 3. 날짜 차이 체크
-        message = _check_date_diff(start_dt, user_response)
-        if message:
-            return message
-            
-        # 4. 중복 예약 체크
-        error = _check_existing_reservation(start_dt, end_dt)
+
+        # 3. 예약 중복 방지
+        error = check_existing_reservation(start_dt, end_dt)
         if error:
             return error
-            
-        # 예약 번호 생성
-        reservation_no = generate_reservation_no()
-        
-        # 예약 추가
+
+        # 4. 예약 추가
         query = f"""
-        INSERT INTO reservations (reservation_no, start_time, end_time, pt_linked_id, state)
-        VALUES ('{reservation_no}', '{start_dt}', '{end_dt}', 5, 'confirmed')
-        RETURNING reservation_id;
+        INSERT INTO reservations (start_time, end_time, pt_linked_id, state)
+        VALUES ('{start_dt}', '{end_dt}', 5, 'confirmed')
+        RETURNING reservation_no;
         """
         
-        result = db.run(query)
-        logger.info(f"예약 추가 쿼리 실행 결과: {result}")
-        
-        if result and "error" not in result.lower():
-            # 예약이 성공적으로 추가되었는지 확인
-            check_query = f"""
-            SELECT reservation_id, start_time, end_time, state
-            FROM reservations
-            WHERE reservation_no = '{reservation_no}'
-            AND pt_linked_id = 5;
-            """
-            check_result = db.run(check_query)
-            logger.info(f"예약 확인 쿼리 실행 결과: {check_result}")
+        result = execute_query(query)
+        return format_reservation_result(result, start_dt, end_dt)
             
-            if check_result and "error" not in check_result.lower():
-                return f"예약이 성공적으로 추가되었습니다. 예약 번호: {reservation_no}, 시간: {start_dt.strftime('%Y년 %m월 %d일 %H시 %M분')} ~ {end_dt.strftime('%H시 %M분')}"
+    except Exception as e:
+        return f"예약 처리 중 오류가 발생했어요: {str(e)}"
+
+@tool
+def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] = None, new_hour: Optional[int] = None, new_month: Optional[int] = None) -> str:
+    """예약을 변경하거나 취소하는 함수"""
+    try:
+        pt_linked_id = 5  # 하드코딩된 pt_linked_id
+        
+        # 예약 번호가 없는 경우, 현재 예약 목록을 조회
+        if not reservation_no:
+            query = f"""
+            SELECT reservation_no, start_time, end_time
+            FROM reservations
+            WHERE pt_linked_id = {pt_linked_id}
+            AND start_time > CURRENT_TIMESTAMP
+            AND state = 'confirmed'
+            ORDER BY start_time
+            """
+            results = execute_query(query)
+            
+            if not results or results == "데이터가 없습니다.":
+                return "현재 예약된 일정이 없어요. 예약 번호를 다시 확인해주세요."
+            
+            return format_schedule_result(str(results))
+        
+        # 예약 번호로 해당 예약이 존재하는지 확인
+        check_query = f"""
+        SELECT start_time, end_time
+        FROM reservations
+        WHERE pt_linked_id = {pt_linked_id}
+        AND reservation_no = '{reservation_no}'
+        AND state = 'confirmed'
+        """
+        
+        result = execute_query(check_query)
+        
+        if not result or result == "데이터가 없습니다.":
+            return "해당 예약 번호를 찾을 수 없어요. 예약 번호를 다시 확인해주세요."
+        
+        # 취소인 경우
+        if action == "cancel":
+            update_query = f"""
+            UPDATE reservations
+            SET state = 'cancelled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE pt_linked_id = {pt_linked_id}
+            AND reservation_no = '{reservation_no}'
+            AND state = 'confirmed'
+            RETURNING start_time;
+            """
+            
+            result = execute_query(update_query)
+            
+            if result and result != "데이터가 없습니다.":
+                formatted_result = format_schedule_result(str([(result, reservation_no)]))
+                return f"예약 번호 {reservation_no}에 해당하는 일정({formatted_result})을 취소해드렸어요."
+            return "예약 취소에 실패했어요. 다시 시도해주세요."
+        
+        # 변경인 경우 (modify 또는 change)
+        elif action in ["change", "modify"]:
+            if not new_day or new_hour is None:
+                return "변경할 날짜와 시간을 모두 입력해주세요."
+            
+            # 새로운 날짜/시간 검증
+            if new_month is not None:
+                date_str = f"{new_month}월 {new_day}일"
             else:
-                return f"예약이 추가되었지만 확인 중 오류가 발생했습니다: {check_result}"
-        else:
-            return f"예약 추가 중 오류가 발생했습니다: {result}"
+                date_str = str(new_day)
+            
+            # 시간 문자열 생성 (24시간 형식)
+            hour_str = str(new_hour)
+            
+            start_dt, end_dt = validate_date_format(date_str, hour_str)
+            if start_dt is None:
+                return end_dt
+            
+            # 당일 예약 방지
+            error = check_same_day(start_dt)
+            if error:
+                return error
+            
+            # 과거 날짜 예약 방지
+            error = check_future_date(start_dt)
+            if error:
+                return error
+            
+            # 중복 예약 확인
+            error = check_existing_reservation(start_dt, end_dt)
+            if error:
+                return error
+            
+            # 예약 변경
+            update_query = f"""
+            UPDATE reservations
+            SET state = 'changed',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE pt_linked_id = {pt_linked_id}
+            AND reservation_no = '{reservation_no}'
+            AND state = 'confirmed'
+            RETURNING start_time;
+            """
+            
+            result = execute_query(update_query)
+            
+            if result and result != "데이터가 없습니다.":
+                # 새로운 예약 추가
+                insert_query = f"""
+                INSERT INTO reservations (start_time, end_time, pt_linked_id, state)
+                VALUES ('{start_dt}', '{end_dt}', {pt_linked_id}, 'confirmed')
+                RETURNING reservation_no;
+                """
+                
+                new_result = execute_query(insert_query)
+                
+                if new_result and new_result != "데이터가 없습니다.":
+                    try:
+                        new_reservation_no = eval(new_result)[0][0]
+                        
+                        # 기존 예약 정보 포맷팅
+                        old_formatted = format_schedule_result(str([(result, reservation_no)]))
+                        
+                        # 새로운 예약 정보 포맷팅
+                        new_formatted = format_schedule_result(str([(new_result, new_reservation_no)]))
+                        
+                        return f"{old_formatted} 예약을 {new_formatted}로 변경해드렸어요."
+                    except Exception as e:
+                        return "예약이 변경되었지만, 새로운 예약 번호를 확인할 수 없어요."
+            return "예약 변경에 실패했어요. 다시 시도해주세요."
+        
+        return "잘못된 작업입니다. 'cancel' 또는 'change'를 지정해주세요."
             
     except Exception as e:
         return f"예약 처리 중 오류가 발생했어요: {str(e)}" 

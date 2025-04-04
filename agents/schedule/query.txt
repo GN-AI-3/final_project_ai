@@ -174,3 +174,4 @@ CREATE TABLE reservations (
 CREATE INDEX idx_reservations_pt_linked_id ON reservations(pt_linked_id);
 CREATE INDEX idx_reservations_start_time ON reservations(start_time);
 CREATE INDEX idx_reservations_state ON reservations(state);
+CREATE INDEX idx_reservations_query ON reservations(pt_linked_id, start_time, state);

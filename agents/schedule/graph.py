@@ -1,37 +1,10 @@
-from typing import Annotated
-from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_teddynote.graphs import visualize_graph
-from chatbot import call_chatbot
 
-# State 정의
-class State(TypedDict):
-    messages: Annotated[list, add_messages]
-
-def ai_assistant_node(state: State):
-    """AI 어시스턴트의 응답을 생성하고 출력합니다."""
-    print("\n")
-    messages = state["messages"]
-    ai_response = call_chatbot(messages)
-    print(f"\033[1;32m예약 도우미\033[0m: {ai_response}")
-    return {"messages": messages + [AIMessage(content=ai_response)]}
-
-def user_node(state: State):
-    """사용자 입력을 받아 처리합니다."""
-    print("\n")
-    user_input = input(f"\033[1;36m사용자\033[0m: ")
-    if user_input.strip().upper() == "종료":
-        return {"messages": state["messages"] + [HumanMessage(content="종료")]}
-    return {"messages": state["messages"] + [HumanMessage(content=user_input)]}
-
-def should_continue(state: State):
-    """대화를 계속할지 결정합니다."""
-    if state["messages"][-1].content == "종료":
-        return "end"
-    return "continue"
+from core.state import State, should_continue
+from core.nodes import ai_assistant_node, user_node
 
 def build_graph():
     """대화 그래프를 구성합니다."""

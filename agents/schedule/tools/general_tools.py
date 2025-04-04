@@ -1,5 +1,5 @@
 from langchain.agents import tool
-from database import db
+from core.database import db
 
 @tool
 def get_schema():
