@@ -68,8 +68,24 @@ def add_reservation(day: str, hour: int, month: str = None, user_response: str =
         return f"예약 처리 중 오류가 발생했어요: {str(e)}"
 
 @tool
-def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] = None, new_hour: Optional[int] = None, new_month: Optional[int] = None) -> str:
-    """예약을 변경하거나 취소하는 함수"""
+def modify_reservation(
+    reservation_no: str, 
+    action: str, 
+    new_day: Optional[int] = None, 
+    new_hour: Optional[int] = None, 
+    new_month: Optional[int] = None,
+    reason: Optional[str] = None
+) -> str:
+    """예약을 변경하거나 취소하는 함수
+    
+    Args:
+        reservation_no (str): 예약 번호
+        action (str): 수행할 동작 ('cancel' 또는 'change')
+        new_day (Optional[int]): 변경할 날짜 (변경 시 필요)
+        new_hour (Optional[int]): 변경할 시간 (변경 시 필요)
+        new_month (Optional[int]): 변경할 월 (변경 시 필요)
+        reason (Optional[str]): 취소/변경 사유
+    """
     try:
         pt_linked_id = 5  # 하드코딩된 pt_linked_id
         
@@ -106,9 +122,14 @@ def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] 
         
         # 취소인 경우
         if action == "cancel":
+            # 사유가 없는 경우 기본 메시지 설정
+            if not reason:
+                reason = "개인 사정"
+                
             update_query = f"""
             UPDATE reservations
             SET state = 'cancelled',
+                reason = '{reason}',
                 updated_at = CURRENT_TIMESTAMP
             WHERE pt_linked_id = {pt_linked_id}
             AND reservation_no = '{reservation_no}'
@@ -120,7 +141,7 @@ def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] 
             
             if result and result != "데이터가 없습니다.":
                 formatted_result = format_schedule_result(str([(result, reservation_no)]))
-                return f"예약 번호 {reservation_no}에 해당하는 일정({formatted_result})을 취소해드렸어요."
+                return f"예약 번호 {reservation_no}에 해당하는 일정({formatted_result})을 취소해드렸어요. (사유: {reason})"
             return "예약 취소에 실패했어요. 다시 시도해주세요."
         
         # 변경인 경우 (modify 또는 change)
@@ -156,10 +177,15 @@ def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] 
             if error:
                 return error
             
+            # 사유가 없는 경우 기본 메시지 설정
+            if not reason:
+                reason = "개인 사정"
+            
             # 예약 변경
             update_query = f"""
             UPDATE reservations
             SET state = 'changed',
+                reason = '{reason}',
                 updated_at = CURRENT_TIMESTAMP
             WHERE pt_linked_id = {pt_linked_id}
             AND reservation_no = '{reservation_no}'
@@ -172,8 +198,8 @@ def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] 
             if result and result != "데이터가 없습니다.":
                 # 새로운 예약 추가
                 insert_query = f"""
-                INSERT INTO reservations (start_time, end_time, pt_linked_id, state)
-                VALUES ('{start_dt}', '{end_dt}', {pt_linked_id}, 'confirmed')
+                INSERT INTO reservations (start_time, end_time, pt_linked_id, state, reason)
+                VALUES ('{start_dt}', '{end_dt}', {pt_linked_id}, 'confirmed', '{reason}')
                 RETURNING reservation_no;
                 """
                 
@@ -189,7 +215,7 @@ def modify_reservation(reservation_no: str, action: str, new_day: Optional[int] 
                         # 새로운 예약 정보 포맷팅
                         new_formatted = format_schedule_result(str([(new_result, new_reservation_no)]))
                         
-                        return f"{old_formatted} 예약을 {new_formatted}로 변경해드렸어요."
+                        return f"{old_formatted} 예약을 {new_formatted}로 변경해드렸어요. (사유: {reason})"
                     except Exception as e:
                         return "예약이 변경되었지만, 새로운 예약 번호를 확인할 수 없어요."
             return "예약 변경에 실패했어요. 다시 시도해주세요."
