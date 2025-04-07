@@ -12,7 +12,7 @@ from agents.food.common.db import (
     get_today_meals, get_weekly_meals, get_diet_plan,
     get_user_preferences_db, recommend_foods
 )
- 
+from agents.food.common.tools import FoodSearchTool
 from langgraph.graph import Graph, StateGraph
 import json
 import os
@@ -50,6 +50,7 @@ class FoodAgent:
         self.llm = self._initialize_llm()
         self.prompts = self._initialize_prompts()
         self.subagents = self._initialize_subagents()
+        self.search_tool = FoodSearchTool()
     
     def _validate_model_name(self, model_name: str) -> str:
         """모델 이름 유효성 검사"""
@@ -138,6 +139,19 @@ class FoodAgent:
                 # 식사 입력 처리
                 meal_input_agent = self._get_subagent(IntentType.MEAL_INPUT)
                 if meal_input_agent:
+                    # 웹 검색으로 음식 정보 보완
+                    food_name = intent_analysis.get("food_name", "")
+                    if food_name:
+                        food_info = await self.search_tool.search_food_info(food_name)
+                        if food_info:
+                            # 검색 결과를 포함하여 처리
+                            return await meal_input_agent.process(
+                                user_input=user_input,
+                                user_id=user_id,
+                                meal_type=meal_type,
+                                food_info=food_info
+                            )
+                    
                     return await meal_input_agent.process(
                         user_input=user_input,
                         user_id=user_id,
@@ -149,6 +163,20 @@ class FoodAgent:
                 # 식단 추천 처리
                 meal_recommendation_agent = self._get_subagent(IntentType.MEAL_RECOMMENDATION)
                 if meal_recommendation_agent:
+                    # 웹 검색으로 식단 정보 보완
+                    food_preferences = await get_user_preferences_db(int(user_id))
+                    if food_preferences:
+                        ingredients = food_preferences.get("preferred_ingredients", [])
+                        if ingredients:
+                            recipe_info = await self.search_tool.search_recipe(ingredients)
+                            if recipe_info:
+                                # 검색 결과를 포함하여 처리
+                                return await meal_recommendation_agent.process(
+                                    user_input=user_input,
+                                    user_id=user_id,
+                                    recipe_info=recipe_info
+                                )
+                    
                     return await meal_recommendation_agent.process(
                         user_input=user_input,
                         user_id=user_id

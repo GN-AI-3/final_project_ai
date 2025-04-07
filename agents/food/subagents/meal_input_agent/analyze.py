@@ -3,12 +3,13 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import AIMessage
 from langchain.prompts import ChatPromptTemplate
 from agents.food.common.db import save_meal_record, get_today_meals, get_weekly_meals, recommend_foods
+from agents.food.common.tools import FoodSearchTool
+from langgraph.graph import Graph, StateGraph
 import json
 from dataclasses import dataclass
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import re
 from datetime import datetime
-from langgraph.graph import Graph, StateGraph
 
 class MealItemModel(BaseModel):
     """식사 항목 모델"""
@@ -43,6 +44,7 @@ class AgentState(TypedDict):
     total_nutrition: Dict[str, float]
     nutrition_analysis: Dict[str, Any]
     food_recommendations: List[Dict[str, Any]]
+    food_info: Optional[Dict[str, Any]]
     error: Optional[str]
 
 class MealInputAgent:
@@ -56,6 +58,7 @@ class MealInputAgent:
         self.model_name = self._validate_model_name(model_name)
         self.llm = self._initialize_llm()
         self.prompts = self._initialize_prompts()
+        self.search_tool = FoodSearchTool()
         self.workflow = self._create_workflow()
     
     def _validate_model_name(self, model_name: str) -> str:
@@ -104,18 +107,44 @@ class MealInputAgent:
     async def _analyze_meal(self, state: AgentState) -> AgentState:
         """식사 분석"""
         try:
-            prompt = self.prompts["meal_input"].format(user_input=state["food_input"])
-            response = await self.llm.ainvoke(prompt)
+            # 웹 검색 결과가 있는 경우 활용
+            if state.get("food_info"):
+                food_info = state["food_info"]
+                # 영양 정보 추출
+                nutrition_info = food_info.get("nutrition", {})
+                if nutrition_info:
+                    meal_item = {
+                        "name": food_info.get("name", state["food_input"]),
+                        "portion": 1.0,
+                        "unit": "인분",
+                        "calories": nutrition_info.get("calories", 0),
+                        "protein": nutrition_info.get("protein", 0),
+                        "carbs": nutrition_info.get("carbs", 0),
+                        "fat": nutrition_info.get("fat", 0)
+                    }
+                    state["meal_items"] = [meal_item]
+                    return state
+
+            # LLM을 사용한 분석
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "식사 정보를 분석하여 영양 정보를 추출하세요."),
+                ("human", "{input}")
+            ])
             
-            if not isinstance(response, AIMessage):
-                state["error"] = "식사 입력을 분석할 수 없습니다."
-                return state
+            chain = prompt | self.llm
             
-            result = self._parse_meal_data(response.content)
-            state["meal_items"] = result["meal_items"]
-            state["total_nutrition"] = result["total_nutrition"]
+            response = await chain.ainvoke({"input": state["food_input"]})
+            
+            # 응답 파싱
+            try:
+                result = json.loads(response.content)
+                state["meal_items"] = result.get("meal_items", [])
+            except json.JSONDecodeError:
+                # JSON 파싱 실패 시 기본값 사용
+                state["meal_items"] = [self._create_default_meal_item(state["food_input"])]
             
             return state
+            
         except Exception as e:
             state["error"] = f"식사 분석 중 오류 발생: {str(e)}"
             return state
@@ -188,7 +217,7 @@ class MealInputAgent:
             state["error"] = f"보완 식품 추천 중 오류 발생: {str(e)}"
             return state
 
-    async def process(self, user_input: str, user_id: str, meal_type: str) -> Dict[str, Any]:
+    async def process(self, user_input: str, user_id: str, meal_type: str, food_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """사용자 입력 처리"""
         try:
             # 초기 상태 설정
@@ -200,6 +229,7 @@ class MealInputAgent:
                 "total_nutrition": {},
                 "nutrition_analysis": {},
                 "food_recommendations": [],
+                "food_info": food_info,
                 "error": None
             }
             
@@ -215,7 +245,8 @@ class MealInputAgent:
                     "meal_items": final_state["meal_items"],
                     "total_nutrition": final_state["total_nutrition"],
                     "nutrition_analysis": final_state["nutrition_analysis"],
-                    "food_recommendations": final_state["food_recommendations"]
+                    "food_recommendations": final_state["food_recommendations"],
+                    "food_info": final_state.get("food_info")
                 }
             }
             
@@ -532,4 +563,16 @@ class MealInputAgent:
                 "carbs": 40,
                 "fat": 8
             }
+        }
+
+    def _create_default_meal_item(self, food_name: str) -> Dict[str, Any]:
+        """기본 식사 항목 생성"""
+        return {
+            "name": food_name,
+            "portion": 1.0,
+            "unit": "인분",
+            "calories": 300.0,
+            "protein": 10.0,
+            "carbs": 40.0,
+            "fat": 8.0
         }
