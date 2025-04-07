@@ -69,17 +69,6 @@ CREATE INDEX idx_pt_linked_member ON pt_linked(member_id);
 CREATE INDEX idx_pt_linked_trainer ON pt_linked(trainer_id);
 CREATE INDEX idx_pt_linked_remain ON pt_linked(remain_count);
 
--- 1. 기존 트리거 삭제
-DROP TRIGGER IF EXISTS set_reservation_no_trigger ON reservations;
-DROP TRIGGER IF EXISTS update_reservations_updated_at ON reservations;
-DROP TRIGGER IF EXISTS check_reservation_state ON reservations;
-
--- 2. 기존 함수 삭제
-DROP FUNCTION IF EXISTS generate_reservation_no();
-DROP FUNCTION IF EXISTS set_reservation_no();
-DROP FUNCTION IF EXISTS update_updated_at_column();
-DROP FUNCTION IF EXISTS update_reservation_state();
-
 -- 3. 예약 번호 생성을 위한 함수 (간소화된 버전)
 CREATE OR REPLACE FUNCTION generate_reservation_no()
 RETURNS VARCHAR AS $$
@@ -102,13 +91,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 5. 트리거 생성
-CREATE TRIGGER set_reservation_no_trigger
-    BEFORE INSERT ON reservations
-    FOR EACH ROW
-    EXECUTE FUNCTION set_reservation_no();
-
--- 6. updated_at 자동 업데이트 함수
+-- 5. updated_at 자동 업데이트 함수
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -117,46 +100,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- 7. updated_at 자동 업데이트 트리거
-CREATE TRIGGER update_reservations_updated_at
-    BEFORE UPDATE ON reservations
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- 8. 예약 상태 변경 함수
-CREATE OR REPLACE FUNCTION update_reservation_state()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- 예약 시간이 지났고 상태가 confirmed인 경우 no_show로 변경
-    IF NEW.start_time < CURRENT_TIMESTAMP AND NEW.state = 'confirmed' THEN
-        NEW.state := 'no_show';
-        NEW.reason := '연락 없음';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- 9. 예약 상태 변경 트리거
-CREATE TRIGGER check_reservation_state
-    BEFORE INSERT OR UPDATE ON reservations
-    FOR EACH ROW
-    EXECUTE FUNCTION update_reservation_state();
-
--- 10. 미래 예약의 no_show 상태를 confirmed로 변경
-UPDATE reservations
-SET state = 'confirmed',
-    reason = NULL,
-    updated_at = CURRENT_TIMESTAMP
-WHERE start_time > CURRENT_TIMESTAMP
-AND state = 'no_show';
-
--- 11. 기존 예약 번호 업데이트
-UPDATE reservations
-SET reservation_no = TO_CHAR(created_at, 'YYMMDD') || '_' || 
-                    LPAD(FLOOR(RANDOM() * 100000)::TEXT, 5, '0'),
-    updated_at = CURRENT_TIMESTAMP;
-
--- 4. reservations 테이블 생성
+-- 6. reservations 테이블 생성
 CREATE TABLE reservations (
     reservation_id SERIAL PRIMARY KEY,
     pt_linked_id INTEGER NOT NULL,
@@ -170,7 +114,18 @@ CREATE TABLE reservations (
     FOREIGN KEY (pt_linked_id) REFERENCES pt_linked(pt_linked_id)
 );
 
--- 5. 인덱스 생성
+-- 7. 트리거 생성
+CREATE TRIGGER set_reservation_no_trigger
+    BEFORE INSERT ON reservations
+    FOR EACH ROW
+    EXECUTE FUNCTION set_reservation_no();
+
+CREATE TRIGGER update_reservations_updated_at
+    BEFORE UPDATE ON reservations
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- 8. 인덱스 생성
 CREATE INDEX idx_reservations_pt_linked_id ON reservations(pt_linked_id);
 CREATE INDEX idx_reservations_start_time ON reservations(start_time);
 CREATE INDEX idx_reservations_state ON reservations(state);
