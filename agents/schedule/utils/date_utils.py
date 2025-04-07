@@ -1,95 +1,109 @@
+import re
 import datetime
 from typing import Union
 
 def _parse_relative_date(date_str: str) -> tuple:
-    """상대적 날짜 표현을 파싱합니다."""
+    """상대적 날짜 표현을 파싱합니다. (예: 오늘, 내일, 다음주 수요일 등)"""
     now = datetime.datetime.now()
     today = now.date()
     
-    # 요일 매핑
     weekdays = {
         '월': 0, '화': 1, '수': 2, '목': 3, '금': 4, '토': 5, '일': 6
     }
     
-    # 상대적 날짜 매핑
     relative_dates = {
         '오늘': 0,
         '내일': 1,
         '모레': 2,
         '글피': 3,
+        '다다음주': 14,
         '다음주': 7
     }
-    
+
     try:
-        # 기본 상대적 날짜 처리
+        date_str = date_str.strip().replace(" ", "")
+
+        # 정확한 상대 표현 (오늘, 내일 등)
         if date_str in relative_dates:
-            days_to_add = relative_dates[date_str]
-            target_date = today + datetime.timedelta(days=days_to_add)
+            delta = relative_dates[date_str]
+            target_date = today + datetime.timedelta(days=delta)
             return target_date.year, target_date.month, target_date.day
-        
-        # 다음주 X요일 처리
-        if '다음주' in date_str:
-            for weekday_kor, weekday_num in weekdays.items():
-                if weekday_kor in date_str:
-                    days_to_add = 7 + (weekday_num - today.weekday()) % 7
-                    target_date = today + datetime.timedelta(days=days_to_add)
-                    return target_date.year, target_date.month, target_date.day
-        
-        # 이번주 X요일 처리
-        for weekday_kor, weekday_num in weekdays.items():
-            if weekday_kor in date_str:
-                days_to_add = (weekday_num - today.weekday()) % 7
+
+        # "다음주화요일", "다다음주목요일" 등의 표현
+        for key in ["다다음주", "다음주"]:
+            if key in date_str:
+                for wk_kor, wk_num in weekdays.items():
+                    if wk_kor in date_str:
+                        base_delta = relative_dates[key]
+                        days_to_add = base_delta + (wk_num - today.weekday()) % 7
+                        target_date = today + datetime.timedelta(days=days_to_add)
+                        return target_date.year, target_date.month, target_date.day
+
+        # "이번주 X요일" 또는 단순 "X요일"
+        for wk_kor, wk_num in weekdays.items():
+            if wk_kor in date_str:
+                days_to_add = (wk_num - today.weekday()) % 7
+                if days_to_add == 0 and "오늘" not in date_str:
+                    days_to_add = 7  # 오늘이 월요일인데 "월요일"이라고 하면 다음 주로 간주
                 target_date = today + datetime.timedelta(days=days_to_add)
                 return target_date.year, target_date.month, target_date.day
-        
+
         return None, None, None
-        
+
     except Exception:
         return None, None, None
 
+
 def _parse_hour(hour_str: str) -> tuple:
-    """시간 문자열을 파싱하여 24시간 형식으로 변환합니다."""
+    """시간 문자열을 파싱하여 24시간 형식으로 변환합니다. (1시간 단위, 오전/오후, 한글 숫자 지원)"""
+    korean_numbers = {
+        "한": 1, "두": 2, "세": 3, "네": 4, "다섯": 5, "여섯": 6,
+        "일곱": 7, "여덟": 8, "아홉": 9, "열": 10,
+        "열한": 11, "열두": 12,
+        "한시": 1, "두시": 2, "세시": 3, "네시": 4, "다섯시": 5, "여섯시": 6,
+        "일곱시": 7, "여덟시": 8, "아홉시": 9, "열시": 10,
+        "열한시": 11, "열두시": 12
+    }
+
     try:
-        # 24시간 형식인 경우
-        if hour_str.isdigit():
-            hour = int(hour_str)
-            if 0 <= hour <= 23:
-                return hour, None
-            return None, "죄송해요. 시간은 0-23 사이의 숫자로 입력해주세요."
-        
-        # 12시간 형식인 경우
-        hour_str = hour_str.lower()
-        if '오전' in hour_str or 'am' in hour_str:
+        original = hour_str
+        hour_str = hour_str.lower().strip().replace(" ", "")
+
+        # 오전/오후 여부
+        is_am = None
+        if "오전" in hour_str or "am" in hour_str:
             is_am = True
-            hour_str = hour_str.replace('오전', '').replace('am', '').strip()
-        elif '오후' in hour_str or 'pm' in hour_str:
+            hour_str = hour_str.replace("오전", "").replace("am", "")
+        elif "오후" in hour_str or "pm" in hour_str:
             is_am = False
-            hour_str = hour_str.replace('오후', '').replace('pm', '').strip()
+            hour_str = hour_str.replace("오후", "").replace("pm", "")
+
+        # 한글 숫자 처리
+        for k_num, value in korean_numbers.items():
+            if k_num in hour_str:
+                hour = value
+                break
         else:
-            # 오전/오후가 없는 경우 24시간 형식으로 간주
-            try:
-                hour = int(hour_str)
-                if 0 <= hour <= 23:
-                    return hour, None
-                return None, "죄송해요. 시간은 0-23 사이의 숫자로 입력해주세요."
-            except ValueError:
-                return None, "죄송해요. 시간은 0-23 또는 오전/오후 1-12 형식으로 입력해주세요."
-        
-        # 숫자만 추출
-        hour = int(''.join(filter(str.isdigit, hour_str)))
-        if hour < 1 or hour > 12:
-            return None, "죄송해요. 12시간 형식에서는 1-12 사이의 숫자로 입력해주세요."
-        
-        # 24시간 형식으로 변환
-        if is_am:
-            hour = 0 if hour == 12 else hour
+            # 한글 아닌 경우 숫자만 추출
+            hour_str = re.sub(r"[^\d]", "", hour_str)
+            if not hour_str:
+                return None, f"죄송해요. '{original}'은(는) 올바른 시간 표현이 아니에요."
+            hour = int(hour_str)
+
+        # 12시간제 → 24시간제 변환
+        if is_am is not None:
+            if not (1 <= hour <= 12):
+                return None, "12시간 형식에서는 1부터 12 사이로 입력해주세요."
+            hour = 0 if hour == 12 and is_am else (hour if is_am else (hour + 12 if hour != 12 else 12))
         else:
-            hour = hour if hour == 12 else hour + 12
-        
+            if not (0 <= hour <= 23):
+                return None, "24시간 형식에서는 0부터 23 사이의 숫자를 입력해주세요."
+
         return hour, None
-        
-    except ValueError:
-        return None, "죄송해요. 시간 형식이 올바르지 않아요. 0-23 또는 오전/오후 1-12 형식으로 입력해주세요."
+
+    except Exception:
+        return None, "시간 형식이 잘못됐어요. 예: '오전 10시', '오후 다섯시', '15시'"
+
 
 def validate_date_format(day: Union[str, int], hour: Union[str, int], month: Union[str, int, None] = None) -> tuple:
     """날짜와 시간 형식을 검증하고 datetime 객체를 생성합니다."""
