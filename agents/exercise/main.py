@@ -4,6 +4,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from .workflows.workout_workflow import create_workout_workflow
 from .models.state_models import RoutingState
 from dotenv import load_dotenv
+from IPython.display import Image, display
 
 load_dotenv()
 
@@ -29,16 +30,6 @@ class ExerciseAgent(BaseAgent):
         """메인 실행 함수"""
 
         workflow = create_workout_workflow()
-        # 초기 상태 설정
-        # initial_state: WorkoutState = {
-        #     "messages": [{"type": "human", "content": message}],
-        #     "user_info": {
-        #         "user_id": "1"
-        #     },
-        #     "current_step": "",
-        #     "workout_plan": {},
-        #     "feedback": {}
-        # }
 
         initial_state = RoutingState(
             message=message
@@ -46,23 +37,8 @@ class ExerciseAgent(BaseAgent):
 
         # 워크플로우 실행
         final_state = workflow.invoke(initial_state)
-        # print("final_state: ", final_state)
-        
-        # # 운동 계획 출력
-        # print("\n챗봇: 안녕하세요! 맞춤형 운동 계획을 만들어드리겠습니다.")
-        # print(f"\n=== 주 {final_state['workout_plan']['weekly_workout_days']}회 운동 계획 ===")
-        
-        # for workout_day in final_state["workout_plan"]["workout_days"]:
-        #     print(f"\n{workout_day['day']}")
-        #     print("-" * 50)
-        #     for exercise in workout_day["exercises"]:
-        #         print(f"{exercise['name']}")
-        #         print(f"- 세트: {exercise['sets']}세트")
-        #         print(f"- 반복: {exercise['reps']}회")
-        #         print(f"- 휴식: {exercise['rest']}")
-        #         print()
-        
-        # print("\n운동 계획에 대해 추가로 궁금하신 점이 있으시다면 말씀해 주세요!")
 
-        # response = main()
-        # return {"type": "exercise", "response": response.content} 
+        try:
+            display(Image(workflow.get_graph().draw_mermaid_png()))
+        except Exception:
+            pass
