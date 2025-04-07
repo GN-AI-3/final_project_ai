@@ -2,6 +2,11 @@ import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from supervisor import Supervisor
+import warnings
+from langchain._api.deprecation import LangChainDeprecationWarning
+
+# LangChain 경고 무시 설정
+warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
 async def main():
     # 환경 변수 로드

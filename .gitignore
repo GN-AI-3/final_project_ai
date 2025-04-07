@@ -11,8 +11,6 @@ data/
 venv/
 env/
 .env/
-ENV/
-.env
 
 # IDE 설정 파일
 # Python
@@ -48,6 +46,13 @@ wheels/
 # 시스템 파일
 .DS_Store
 Thumbs.db
+
+# firebase 파일
+google-services.json
+firebase-service-account-key.json
+
+# env 파일
+.env
 
 /mini-api-test-a0538c7dd495.json
 # Logs
