@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from ..base_agent import BaseAgent
-from config.prompts import get_schedule_agent_prompt
+from agents.schedule.config.prompts import get_schedule_agent_prompt
 
 class ScheduleAgent(BaseAgent):
     async def process(self, message: str) -> Dict[str, Any]:
