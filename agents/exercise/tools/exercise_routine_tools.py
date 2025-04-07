@@ -2,7 +2,11 @@ from langchain.tools import tool
 from tavily import TavilyClient
 import os
 import psycopg2
+import re
 from dotenv import load_dotenv
+from psycopg2 import sql
+import json
+from ..models.input_models import MasterSelectInput
 
 load_dotenv()
 
@@ -12,6 +16,12 @@ DB_CONFIG = {
     "password": os.getenv("POSTGRES_PASSWORD"),
     "host": os.getenv("POSTGRES_HOST"),
     "port": os.getenv("POSTGRES_PORT")
+}
+
+TABLE_SCHEMA = {
+    "exercise_record": ["id", "member_id", "exercise_id", "timestamp", "record_data", "memo_data"],
+    "exercise": ["id", "name", "reps", "distance"],
+    "member": ["id", "name", "email", "phone", "profile_image", "goal"]
 }
 
 @tool
@@ -65,3 +75,72 @@ def get_user_physical_info(user_id: str) -> str:
             return "사용자의 신체 정보가 없습니다"
     except Exception as e:
         return f"Database error: {str(e)}"
+
+@tool
+def get_user_exercise_record(user_id: str) -> str:
+    """PostgreSQL - exercise_record table에서 사용자 운동 기록 조회"""
+    query = f"SELECT * FROM exercise_record WHERE member_id = {user_id};"
+    print("query: ", query)
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        result = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return str(result)
+    except Exception as e:
+        return f"Database error: {str(e)}"
+
+@tool
+def get_table_schema() -> str:
+    """PostgreSQL - 사용 가능한 테이블과 컬럼 정보를 반환"""
+    schema_info = []
+    for table_name, columns in TABLE_SCHEMA.items():
+        schema_info.append(f"테이블: {table_name}")
+        schema_info.append(f"컬럼: {', '.join(columns)}")
+        schema_info.append("")
+    return "\n".join(schema_info)
+
+def master_select_db(table_name: str, column_name: str, value: str) -> str:
+    """PostgreSQL - 사전 정의된 모든 테이블에서 테이블명, 컬럼명, 값으로 데이터 조회
+    table_name, column_name, value 모두 필수입니다.
+    TABLE_SCHEMA 에 정의된 테이블만 사용 가능
+    TABLE_SCHEMA 에 정의된 컬럼만 사용 가능
+    
+    Args:
+        table_name: 조회할 테이블 이름
+        column_name: (선택) 조건 컬럼 이름
+        value: (선택) 조건 값
+        
+    Returns:
+        조회된 데이터의 JSON 문자열
+    """
+    if table_name not in TABLE_SCHEMA:
+        print("table_name: ", table_name)
+        return "Invalid table name"
+    
+    if column_name not in TABLE_SCHEMA[table_name]:
+        print("column_name: ", column_name)
+        return "Invalid column name"
+    
+    try:
+        query = sql.SQL("SELECT * FROM {} WHERE {} = %s").format(
+            sql.Identifier(table_name),
+            sql.Identifier(column_name)
+        )
+        params = (value,)
+
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        column_names = [desc[0] for desc in cursor.description]
+
+        result = [dict(zip(column_names, row)) for row in rows]
+        cursor.close()
+        conn.close()
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        return f"Database error: {str(e)}"
+
