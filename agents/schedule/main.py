@@ -1,5 +1,7 @@
 import os
+
 from langchain_teddynote import logging
+
 from graph import run_graph_simulation
 from services.scheduler_service import start_scheduler
 
@@ -10,6 +12,7 @@ if PROJECT_NAME:
 
 
 def main():
+    """메인 함수 - 스케줄러 및 그래프 시뮬레이션 실행"""
     # 스케줄러 시작
     start_scheduler()
     

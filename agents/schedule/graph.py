@@ -6,8 +6,13 @@ from langchain_teddynote.graphs import visualize_graph
 from core.state import State, should_continue
 from core.nodes import ai_assistant_node, user_node
 
+
 def build_graph():
-    """대화 그래프를 구성합니다."""
+    """대화 그래프를 구성합니다.
+    
+    Returns:
+        컴파일된 그래프 객체
+    """
     graph_builder = StateGraph(State)
 
     # 노드 추가
@@ -30,12 +35,16 @@ def build_graph():
     graph_builder.set_entry_point("예약 도우미")
     return graph_builder.compile()
 
+
 def run_graph_simulation():
     """그래프 시뮬레이션을 실행합니다."""
     simulation = build_graph()
     visualize_graph(simulation)
 
-    config = RunnableConfig(recursion_limit=2147483647, configurable={"thread_id": "5"})
+    config = RunnableConfig(
+        recursion_limit=2147483647, 
+        configurable={"thread_id": "5"}
+    )
 
     # supervisor로부터 최초로 받는 메시지(input)
     inputs = {
@@ -45,6 +54,7 @@ def run_graph_simulation():
     # 그래프 스트리밍 실행
     for chunk in simulation.stream(inputs, config):
         pass
+
 
 if __name__ == "__main__":
     run_graph_simulation() 
