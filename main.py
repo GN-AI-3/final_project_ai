@@ -12,15 +12,11 @@ async def main():
     # 환경 변수 로드
     load_dotenv()
     
-    # OpenAI 모델 초기화
-    model = ChatOpenAI(
-        model="gpt-3.5-turbo",
-        temperature=0.0,
-        streaming=True
-    )
-    
     # Supervisor 초기화
-    supervisor = Supervisor(model)
+    model = ChatOpenAI(model="gpt-3.5-turbo")
+
+    # Supervisor 초기화 (model 객체 전달)
+    supervisor = Supervisor(model=model)
     
     print("안녕하세요! 운동, 식단, 일정, 일반적인 대화에 대해 도움을 드릴 수 있습니다.")
     print("종료하려면 'quit' 또는 'exit'를 입력하세요.")
