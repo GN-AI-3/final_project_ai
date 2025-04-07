@@ -29,29 +29,44 @@ def get_user_schedule(input: str) -> str:
         return f"일정 조회 중 오류가 발생했습니다: {str(e)}"
 
 @tool
-def add_reservation(day: str, hour: int, month: str = None, user_response: str = None) -> str:
-    """예약을 추가합니다."""
+def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
+    """예약을 추가합니다.
+    
+    Args:
+        day (str): 예약할 날짜 (문자열로 입력)
+        hour (str): 예약할 시간 (문자열로 입력)
+        month (Optional[str]): 예약할 월 (선택적, 문자열로 입력)
+    """
     try:
+        print(f"[DEBUG] 예약 요청 파라미터 - day: {day}, hour: {hour}, month: {month}")
+        
         # month가 None이 아닌 경우 문자열로 변환
         month_str = str(month) if month is not None else None
-        start_dt, end_dt = validate_date_format(day, str(hour), month_str)
+        print(f"[DEBUG] 변환된 month_str: {month_str}")
+        
+        start_dt, end_dt = validate_date_format(day, hour, month_str)
+        print(f"[DEBUG] 날짜 검증 결과 - start_dt: {start_dt}, end_dt: {end_dt}")
         
         if start_dt is None:
+            print(f"[DEBUG] 날짜 검증 실패 - 에러 메시지: {end_dt}")
             return end_dt
 
         # 1. 당일 예약 방지
         error = check_same_day(start_dt)
         if error:
+            print(f"[DEBUG] 당일 예약 체크 실패 - 에러 메시지: {error}")
             return error
 
         # 2. 과거 날짜 예약 방지
         error = check_future_date(start_dt)
         if error:
+            print(f"[DEBUG] 과거 날짜 체크 실패 - 에러 메시지: {error}")
             return error
 
         # 3. 예약 중복 방지
         error = check_existing_reservation(start_dt, end_dt)
         if error:
+            print(f"[DEBUG] 중복 예약 체크 실패 - 에러 메시지: {error}")
             return error
 
         # 4. 예약 추가
@@ -60,11 +75,15 @@ def add_reservation(day: str, hour: int, month: str = None, user_response: str =
         VALUES ('{start_dt}', '{end_dt}', 5, 'confirmed')
         RETURNING reservation_no;
         """
+        print(f"[DEBUG] 실행할 SQL 쿼리: {query}")
         
         result = execute_query(query)
+        print(f"[DEBUG] SQL 쿼리 실행 결과: {result}")
+        
         return format_reservation_result(result, start_dt, end_dt)
             
     except Exception as e:
+        print(f"[DEBUG] 예약 처리 중 예외 발생: {str(e)}")
         return f"예약 처리 중 오류가 발생했어요: {str(e)}"
 
 @tool
@@ -198,8 +217,8 @@ def modify_reservation(
             if result and result != "데이터가 없습니다.":
                 # 새로운 예약 추가
                 insert_query = f"""
-                INSERT INTO reservations (start_time, end_time, pt_linked_id, state, reason)
-                VALUES ('{start_dt}', '{end_dt}', {pt_linked_id}, 'confirmed', '{reason}')
+                INSERT INTO reservations (start_time, end_time, pt_linked_id, state)
+                VALUES ('{start_dt}', '{end_dt}', {pt_linked_id}, 'confirmed')
                 RETURNING reservation_no;
                 """
                 
