@@ -168,24 +168,19 @@ class ExerciseDBTools:
             return {
                 "pattern": "inactive",
                 "total_records": 0,
-                "attendance_rate": 0.0,
                 "memo_rate": 0.0
             }
             
         # 기록 수
         total_records = len(records)
         
-        # 출석률 계산 (최근 30일 기준)
-        days = 30
-        attendance_rate = min(1.0, total_records / days)
-        
         # 메모 기록률 계산
         memo_rate = ExerciseDBTools.calculate_memo_rate(records)
         
-        # 운동 패턴 결정
-        if attendance_rate >= 0.7:  # 70% 이상 출석
+        # 운동 패턴 결정 (메모 기록률 기준으로 변경)
+        if memo_rate >= 0.7:  # 70% 이상 메모 작성
             pattern = "active"
-        elif attendance_rate >= 0.3:  # 30% 이상 출석
+        elif memo_rate >= 0.3:  # 30% 이상 메모 작성
             pattern = "irregular"
         else:
             pattern = "inactive"
@@ -193,7 +188,6 @@ class ExerciseDBTools:
         return {
             "pattern": pattern,
             "total_records": total_records,
-            "attendance_rate": attendance_rate,
             "memo_rate": memo_rate
         }
     

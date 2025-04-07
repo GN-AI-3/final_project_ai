@@ -1,9 +1,8 @@
 """
 Prompts package for motivation agent
-동기부여 에이전트를 위한 프롬프트 템플릿 모음
 """
 
-# motivation/prompts 패키지
+# motivation/prompts package
 from .prompt_templates import (
     UNIFIED_PROMPT,
     get_unified_prompt_with_goals,

@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # OpenAI API 키 설정 (환경 변수에서 가져오기, 없으면 기본값 사용)
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "sk-your-api-key")
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
 # LangChain의 디버그 로그 제거
 os.environ["LANGCHAIN_HANDLER"] = "langchain"

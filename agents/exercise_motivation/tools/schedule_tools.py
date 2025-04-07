@@ -6,6 +6,7 @@ import logging
 import requests
 from datetime import datetime, time, timedelta
 from typing import Dict, Any, Optional
+import json
 
 from agents.exercise_motivation.tools.db_tools import ExerciseDBTools
 
@@ -17,6 +18,10 @@ class ScheduleTools:
     
     # 기본 메시지 전송 시간
     DEFAULT_SEND_TIME = "09:00"  # 오전 9시
+    
+    # FCM 서비스 설정
+    FCM_API_URL = "https://fcm.googleapis.com/fcm/send"
+    FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
     
     @staticmethod
     def get_optimal_send_time(user_id: int, weeks: int) -> str:
@@ -104,9 +109,48 @@ class ScheduleTools:
             return False
     
     @staticmethod
+    def get_user_fcm_token(user_id: int) -> Optional[str]:
+        """
+        사용자의 FCM 토큰을 데이터베이스에서 가져옵니다.
+        
+        Args:
+            user_id: 사용자 ID
+            
+        Returns:
+            Optional[str]: FCM 토큰 또는 None
+        """
+        try:
+            conn, cursor = ExerciseDBTools.connect_db()
+            if not conn or not cursor:
+                return None
+            
+            query = """
+            SELECT fcm_token FROM public.member
+            WHERE id = %s AND fcm_token IS NOT NULL
+            """
+            
+            cursor.execute(query, (user_id,))
+            result = cursor.fetchone()
+            
+            # 연결 종료
+            cursor.close()
+            conn.close()
+            
+            if result and result[0]:
+                logger.info(f"사용자 {user_id}의 FCM 토큰 조회 완료")
+                return result[0]
+            else:
+                logger.warning(f"사용자 {user_id}의 FCM 토큰이 존재하지 않습니다")
+                return None
+                
+        except Exception as e:
+            logger.error(f"FCM 토큰 조회 중 오류: {str(e)}")
+            return None
+    
+    @staticmethod
     def set_mobile_alarm(user_id: int, message: str) -> bool:
         """
-        모바일 앱 알림을 설정합니다.
+        모바일 앱 알림을 설정하고 FCM을 통해 메시지를 전송합니다.
         
         Args:
             user_id: 사용자 ID
@@ -123,11 +167,63 @@ class ScheduleTools:
             # 최적 전송 시간 계산
             send_time = ScheduleTools.get_optimal_send_time(user_id, weeks)
             
-            # 모바일 앱 알림 설정 로직 (실제로는 FCM 등 사용)
-            shortened_message = message[:50] + "..." if len(message) > 50 else message
-            logger.info(f"사용자 {user_id}에 대한 모바일 알림 {send_time}에 예약: {shortened_message}")
+            # 메시지 준비
+            shortened_message = message[:100] + "..." if len(message) > 100 else message
             
-            return True
+            # 사용자 FCM 토큰 조회
+            fcm_token = ScheduleTools.get_user_fcm_token(user_id)
+            
+            if not fcm_token:
+                logger.error(f"사용자 {user_id}의 FCM 토큰이 없어 메시지를 전송할 수 없습니다")
+                return False
+                
+            if not ScheduleTools.FCM_SERVER_KEY:
+                logger.error("FCM 서버 키가 설정되지 않았습니다. 환경변수 FCM_SERVER_KEY를 확인하세요.")
+                return False
+            
+            # FCM 메시지 페이로드 구성
+            fcm_message = {
+                "to": fcm_token,
+                "notification": {
+                    "title": "오늘의 운동 동기부여",
+                    "body": shortened_message,
+                    "sound": "default",
+                    "click_action": "FLUTTER_NOTIFICATION_CLICK"
+                },
+                "data": {
+                    "user_id": str(user_id),
+                    "message_type": "motivation",
+                    "send_time": send_time,
+                    "full_message": message
+                }
+            }
+            
+            # FCM 요청 헤더
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"key={ScheduleTools.FCM_SERVER_KEY}"
+            }
+            
+            # FCM 서버에 메시지 전송 요청
+            response = requests.post(
+                ScheduleTools.FCM_API_URL,
+                headers=headers,
+                data=json.dumps(fcm_message)
+            )
+            
+            # 응답 확인
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success") == 1:
+                    logger.info(f"사용자 {user_id}에게 FCM 메시지 전송 성공: {send_time}")
+                    return True
+                else:
+                    error = result.get("results", [{}])[0].get("error", "Unknown error")
+                    logger.error(f"FCM 메시지 전송 실패: {error}")
+                    return False
+            else:
+                logger.error(f"FCM 서버 응답 오류: {response.status_code} - {response.text}")
+                return False
             
         except Exception as e:
             logger.error(f"모바일 알림 설정 중 오류: {str(e)}")

@@ -54,7 +54,6 @@ class ExerciseMotivationAgent(BaseAgent):
             # 2. 운동 패턴 분석
             pattern_data = ExerciseDBTools.get_exercise_pattern(records)
             pattern = pattern_data.get("pattern")
-            attendance_rate = pattern_data.get("attendance_rate")
             total_records = pattern_data.get("total_records")
             memo_rate = pattern_data.get("memo_rate")
             
@@ -62,7 +61,7 @@ class ExerciseMotivationAgent(BaseAgent):
             weeks = ExerciseDBTools.get_exercise_weeks(records)
             
             # 4. 운동 패턴 설명 생성
-            pattern_details = get_pattern_details(pattern, attendance_rate, total_records)
+            pattern_details = get_pattern_details(pattern, memo_rate, total_records)
             
             # 5. 주차에 따른 프롬프트 템플릿 선택
             prompt_template = get_motivation_prompt_template(weeks)

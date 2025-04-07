@@ -106,17 +106,17 @@ PATTERN_DESCRIPTIONS = {
 """
 }
 
-def get_pattern_details(pattern: str, attendance_rate: float, total_records: int) -> str:
+def get_pattern_details(pattern: str, memo_rate: float, total_records: int) -> str:
     """
-    운동 패턴에 따른 세부 설명을 생성합니다.
+    Generate detailed descriptions based on exercise patterns.
     
     Args:
-        pattern: 운동 패턴 ('active', 'irregular', 'inactive')
-        attendance_rate: 출석률 (0.0~1.0)
-        total_records: 총 운동 기록 수
+        pattern: Exercise pattern ('active', 'irregular', 'inactive')
+        memo_rate: Memo recording rate (0.0~1.0)
+        total_records: Total number of exercise records
         
     Returns:
-        str: 운동 패턴 세부 설명
+        str: Detailed description of exercise pattern
     """
     if pattern not in PATTERN_DESCRIPTIONS:
         return "사용자의 운동 패턴을 파악할 수 없습니다."
@@ -127,22 +127,22 @@ def get_pattern_details(pattern: str, attendance_rate: float, total_records: int
 
 def get_motivation_prompt_template(weeks: int) -> ChatPromptTemplate:
     """
-    주차에 따른 프롬프트 템플릿을 생성합니다.
+    Generate prompt templates based on the week.
     
     Args:
-        weeks: 운동 시작 후 주차
+        weeks: Weeks since starting exercise
         
     Returns:
-        ChatPromptTemplate: 해당 주차에 적합한 프롬프트 템플릿
+        ChatPromptTemplate: Prompt template appropriate for the given week
     """
-    # 4주 이하는 초기 단계 템플릿 사용
+    # Use early stage template for 4 weeks or less
     if weeks <= 4:
         template = EARLY_MOTIVATION_TEMPLATE
-    # 5주 이상은 개인화 템플릿 사용
+    # Use personalized template for 5 weeks or more
     else:
         template = PERSONALIZED_MOTIVATION_TEMPLATE
         
-    # 프롬프트 템플릿 생성
+    # Create prompt template
     return ChatPromptTemplate.from_messages([
         ("system", SYSTEM_MESSAGE),
         ("human", template),

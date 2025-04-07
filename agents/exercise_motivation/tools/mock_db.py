@@ -18,7 +18,6 @@ class MockDBTools:
         1: {  # 적극적인 사용자
             "pattern": "active",
             "total_records": 25,
-            "attendance_rate": 0.83,
             "memo_rate": 0.9,
             "first_record_date": datetime.now() - timedelta(days=35),
             "preferred_time": "18:30",  # 저녁 시간에 운동
@@ -27,7 +26,6 @@ class MockDBTools:
         2: {  # 불규칙적 사용자
             "pattern": "irregular",
             "total_records": 12,
-            "attendance_rate": 0.4,
             "memo_rate": 0.5,
             "first_record_date": datetime.now() - timedelta(days=30),
             "preferred_time": "12:00",  # 점심 시간에 운동
@@ -36,7 +34,6 @@ class MockDBTools:
         3: {  # 비활성 사용자
             "pattern": "inactive",
             "total_records": 3,
-            "attendance_rate": 0.1,
             "memo_rate": 0.33,
             "first_record_date": datetime.now() - timedelta(days=28),
             "preferred_time": "07:00",  # 아침에 운동
@@ -45,7 +42,6 @@ class MockDBTools:
         4: {  # 신규 사용자
             "pattern": "inactive",
             "total_records": 0,
-            "attendance_rate": 0.0,
             "memo_rate": 0.0,
             "first_record_date": None,
             "preferred_time": "09:00",  # 기본값
@@ -110,10 +106,11 @@ class MockDBTools:
             else:
                 time_variance = 240  # 최대 4시간 변동
         
-        # 출석률에 따라 모의 기록 생성
+        # memo_rate에 따라 모의 기록 생성 (기존의 출석률 대신 사용)
+        record_creation_rate = min(1.0, user["total_records"] / days)
         for i in range(days):
-            # 출석률에 기반하여 운동했는지 여부 결정
-            if random.random() <= user["attendance_rate"]:
+            # 기록 생성률에 기반하여 운동 기록을 생성할지 결정
+            if random.random() <= record_creation_rate:
                 date = (datetime.now() - timedelta(days=i))
                 
                 # 시간 변동 추가 (일관성에 따라)
@@ -215,24 +212,19 @@ class MockDBTools:
             return {
                 "pattern": "inactive",
                 "total_records": 0,
-                "attendance_rate": 0.0,
                 "memo_rate": 0.0
             }
             
         # 기록 수
         total_records = len(records)
         
-        # 출석률 계산 (최근 30일 기준)
-        days = 30
-        attendance_rate = min(1.0, total_records / days)
-        
         # 메모 기록률 계산
         memo_rate = MockDBTools.calculate_memo_rate(records)
         
-        # 운동 패턴 결정
-        if attendance_rate >= 0.7:  # 70% 이상 출석
+        # 운동 패턴 결정 (메모 기록률 기준으로 변경)
+        if memo_rate >= 0.7:  # 70% 이상 메모 작성
             pattern = "active"
-        elif attendance_rate >= 0.3:  # 30% 이상 출석
+        elif memo_rate >= 0.3:  # 30% 이상 메모 작성
             pattern = "irregular"
         else:
             pattern = "inactive"
@@ -240,7 +232,6 @@ class MockDBTools:
         return {
             "pattern": pattern,
             "total_records": total_records,
-            "attendance_rate": attendance_rate,
             "memo_rate": memo_rate
         }
     
@@ -359,5 +350,6 @@ class MockDBTools:
         Returns:
             bool: 저장 성공 여부
         """
+        # 실제 DB에서는 public.motivation_messages 테이블의 member_id 필드에 저장
         logger.info(f"사용자 {user_id}에 대한 동기부여 메시지 저장 완료 (모의)")
         return True

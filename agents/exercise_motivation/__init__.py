@@ -10,4 +10,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 버전 정보
-__version__ = "1.0.0" 
+__version__ = "1.0.0"
+
+# 기본 에이전트 임포트
+from agents.exercise_motivation.agents import default_agent, ExerciseMotivationAgent
+
+__all__ = ["default_agent", "ExerciseMotivationAgent"] 
