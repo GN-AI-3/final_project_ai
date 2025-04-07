@@ -1,5 +1,5 @@
 # Python 캐시 파일
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 
@@ -16,7 +16,6 @@ ENV/
 
 # IDE 설정 파일
 # Python
-__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -51,7 +50,6 @@ wheels/
 Thumbs.db
 
 /mini-api-test-a0538c7dd495.json
-__pycache__/
 # Logs
 *.log
 
