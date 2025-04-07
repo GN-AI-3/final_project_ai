@@ -3,11 +3,11 @@ from ..prompts.exercise_form_prompts import EXERCISE_FORM_PROMPT, CONFIRM_EXERCI
 from langchain_openai import ChatOpenAI
 from langchain.tools import Tool, StructuredTool
 from ..tools.exercise_form_tools import web_search, get_user_info, get_exercise_info
-from ..tools.exercise_routine_tools import master_select_db, get_table_schema
+from ..tools.exercise_routine_tools import master_select_db, get_table_schema, master_select_db_multi
 from dotenv import load_dotenv
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
-from ..models.input_models import GetUserInfoInput, MasterSelectInput
+from ..models.input_models import GetUserInfoInput, MasterSelectInput, MasterSelectMultiInput
 
 load_dotenv()
 
@@ -31,21 +31,27 @@ tools = [
     StructuredTool.from_function(
         func=master_select_db,
         name="master_select_db",
-        description="PostgreSQL의 모든 테이블에서 데이터를 조회합니다. table_name, column_name, value 모두 필수입니다.",
+        description="PostgreSQL의 모든 테이블에서 데이터를 조회합니다. table_name, column_name, value 모두 필수입니다. TABLE_SCHEMA에 정의된 테이블명, 컬럼명만 사용할 수 있습니다.",
         args_schema=MasterSelectInput
     ),
-    Tool.from_function(
-        func=get_exercise_info,
-        name="get_exercise_info",
-        description="운동 명칭에 대한 기본 정보를 제공합니다."
+    StructuredTool.from_function(
+        func=master_select_db_multi,
+        name="master_select_db_multi",
+        description="PostgreSQL의 모든 테이블에서 여러 조건으로 데이터를 조회합니다. table_name, conditions 모두 필수입니다. table_name은 TABLE_SCHEMA에 정의된 테이블명만 사용할 수 있습니다. conditions 의 키는 TABLE_SCHEMA에 정의된 컬럼명만 사용할 수 있습니다.",
+        args_schema=MasterSelectMultiInput
     ),
+    # Tool.from_function(
+    #     func=get_exercise_info,
+    #     name="get_exercise_info",
+    #     description="운동 명칭에 대한 기본 정보를 제공합니다."
+    # ),
 ]
 
 def exercise_form_agent(state: RoutingState, llm: ChatOpenAI):
     """운동 자세 추천 노드"""
     prompt = ChatPromptTemplate.from_messages([
         ("system", EXERCISE_FORM_PROMPT),
-        ("user", "{message}\n\n[USER_ID: {user_id}]"),
+        ("user", "{message}\n\n[MEMBER_ID: {member_id}]"),
         MessagesPlaceholder(variable_name="agent_scratchpad")
     ])
 
@@ -62,7 +68,7 @@ def exercise_form_agent(state: RoutingState, llm: ChatOpenAI):
 
     response = agent_executor.invoke({
         "message": state.message,
-        "user_id": user_id
+        "member_id": 3
     })
     print("exercise form response: ", response["output"])
     state.message = response["output"]

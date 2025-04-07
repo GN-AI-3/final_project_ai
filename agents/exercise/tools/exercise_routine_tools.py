@@ -19,8 +19,8 @@ DB_CONFIG = {
 }
 
 TABLE_SCHEMA = {
-    "exercise_record": ["id", "member_id", "exercise_id", "timestamp", "record_data", "memo_data"],
-    "exercise": ["id", "name", "reps", "distance"],
+    "exercise_record": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
+    "exercise": ["id", "name", "exercise_type"],
     "member": ["id", "name", "email", "phone", "profile_image", "goal"]
 }
 
@@ -144,3 +144,48 @@ def master_select_db(table_name: str, column_name: str, value: str) -> str:
     except Exception as e:
         return f"Database error: {str(e)}"
 
+def master_select_db_multi(
+    table_name: str, 
+    conditions: dict
+) -> str:
+    """
+    PostgreSQL - 사전 정의된 테이블에서 여러 조건(column=value)으로 데이터 조회
+    TABLE_SCHEMA 에 정의된 테이블과 컬럼만 사용 가능
+
+    Args:
+        table_name: 조회할 테이블 이름
+        conditions: 조회 조건 (예: {"id": "1", "email": "test@gmail.com"})
+
+    Returns:
+        JSON 문자열로 된 결과
+    """
+    if table_name not in TABLE_SCHEMA:
+        return "Invalid table name"
+    
+    for col in conditions.keys():
+        if col not in TABLE_SCHEMA[table_name]:
+            return f"Invalid column name: {col}"
+
+    try:
+        where_clauses = [
+            sql.SQL("{} = %s").format(sql.Identifier(col)) for col in conditions.keys()
+        ]
+        query = sql.SQL("SELECT * FROM {} WHERE {}").format(
+            sql.Identifier(table_name),
+            sql.SQL(" AND ").join(where_clauses)
+        )
+
+        params = tuple(conditions.values())
+
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        column_names = [desc[0] for desc in cursor.description]
+
+        result = [dict(zip(column_names, row)) for row in rows]
+        cursor.close()
+        conn.close()
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        return f"Database error: {str(e)}"

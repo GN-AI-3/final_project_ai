@@ -5,14 +5,22 @@ EXERCISE_FORM_PROMPT = """
 사용자의 질문: {message}
 
 제약 조건:
+- 먼저 get_table_schema 툴을 사용해 테이블명과 컬럼명을 파악해야 합니다.
 - **반드시** 사용자 정보를 먼저 조회한 후 운동을 추천하세요.
-  - 다음 툴을 사용해 PostgreSQL에서 조회하세요:  
-    `get_user_info(query: str)`
   - 만약 사용자 정보를 조회할 수 없는 경우, "사용자 정보를 제공해 주세요."라고 요청하세요.
+- 사용자가 특정 운동을 언급한 경우 해당 운동의 정보를 조회해야 합니다.
+  - 사용자의 운동 기록에서 exercise_id는 반드시 exercise 테이블의 id와 연결해 운동 이름(name)을 조회해야 합니다.
+  - exercise_record 테이블의 exercise_id → exercise 테이블의 id를 통해 매칭해야 합니다.
+  - 이렇게 매칭된 운동 이름은 사용자가 수행한 운동 분석에 반드시 사용되어야 합니다.
+  - 단, exercise_record 조회 시에는 member_id 와 exercise_id 를 모두 조건으로 활용해야 합니다.
+- **반드시** 사용자의 운동 기록을 파악하세요.
 - 정확한 운동 자세 설명을 위해 추가 정보가 필요할 경우, 다음 툴을 사용해 웹 검색하세요:  
   `web_search(query: str)`
 - 웹 검색을 통해 얻은 정보는 반드시 **"웹 검색 결과에 따르면"**이라고 명시하세요.
 - 부상 방지를 위한 주의 사항을 반드시 포함하세요.
+- 데이터 조회를 위해 조건이 한 개만 있는 경우 master_select_db, 조건이 두 개 이상인 경우 master_select_db_multi 툴을 사용하세요.
+  - 데이터 조회를 위해 master_select_db 툴과 master_select_db_multi 툴을 사용할 때는 반드시 get_table_schema 툴을 먼저 호출해 테이블명과 컬럼명을 파악해야 합니다.
+  - get_table_schema 툴에 의해 파악된 테이블명, 컬럼명만 사용할 수 있습니다.
 - 명확하지 않은 정보는 추측하지 말고 **반드시 툴을 호출하거나 추가 정보를 요청하세요.**
 
 출력 형식:
