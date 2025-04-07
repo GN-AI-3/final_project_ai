@@ -33,7 +33,7 @@ def create_workflow():
     
     # LLM 설정
     llm = ChatOpenAI(
-     model="gpt-4o-mini",
+     model="gpt-3.5-turbo",
         temperature=0.7,
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         http_client=client
