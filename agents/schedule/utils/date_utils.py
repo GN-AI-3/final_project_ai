@@ -1,10 +1,7 @@
 import re
 from datetime import datetime, timedelta
 from typing import Union, Tuple, Optional
-from utils.logger import log_function_call, log_error
-import traceback
 
-@log_function_call
 def _parse_relative_date(date_str: str) -> Tuple[Optional[int], Optional[int], Optional[int]]:
     """상대적 날짜 표현을 파싱합니다. (예: 오늘, 내일, 다음주 수요일 등)
     
@@ -61,11 +58,9 @@ def _parse_relative_date(date_str: str) -> Tuple[Optional[int], Optional[int], O
         return None, None, None
 
     except Exception as e:
-        log_error(f"상대적 날짜 파싱 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return None, None, None
 
 
-@log_function_call
 def _parse_hour(hour_str: Union[str, int]) -> Tuple[Optional[int], Optional[str]]:
     """시간 문자열을 파싱하여 24시간 형식으로 변환합니다. (1시간 단위, 오전/오후, 한글 숫자 지원)
     
@@ -120,11 +115,9 @@ def _parse_hour(hour_str: Union[str, int]) -> Tuple[Optional[int], Optional[str]
         return hour, None
 
     except Exception as e:
-        log_error(f"시간 파싱 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return None, "시간 형식이 잘못됐어요. 예: '오전 10시', '오후 다섯시', '15시'"
 
 
-@log_function_call
 def validate_date_format(
     day: Union[str, int], 
     hour: Union[str, int], 
@@ -255,9 +248,6 @@ def validate_date_format(
         end_dt = start_dt + timedelta(hours=1)
         return start_dt, end_dt
 
-    # except Exception:
-    #     error_msg = "죄송해요. 잘못된 날짜 또는 시간 형식이에요. 다시 입력해주세요."
-    #     return None, error_msg
-    except Exception as e:
-        log_error(f"날짜 형식 검증 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
-        return None, f"날짜 형식 검증 중 오류가 발생했습니다: {str(e)}"
+    except Exception:
+        error_msg = "죄송해요. 잘못된 날짜 또는 시간 형식이에요. 다시 입력해주세요."
+        return None, error_msg

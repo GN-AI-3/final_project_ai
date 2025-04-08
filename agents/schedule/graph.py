@@ -43,7 +43,7 @@ def run_graph_simulation():
 
     config = RunnableConfig(
         recursion_limit=2147483647, 
-        configurable={"thread_id": "5"}
+        configurable={"thread_id": "7"}
     )
 
     # supervisor로부터 최초로 받는 메시지(input)

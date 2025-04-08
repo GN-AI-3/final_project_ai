@@ -1,9 +1,6 @@
 import ast
 from datetime import datetime
-from utils.logger import log_function_call, log_error
-import traceback
 
-@log_function_call
 def format_schedule_result(result_str: str) -> str:
     """일정 조회 결과를 포맷팅합니다.
     
@@ -46,10 +43,8 @@ def format_schedule_result(result_str: str) -> str:
             
         return result_str
     except Exception as e:
-        log_error(f"일정 포맷팅 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return f"일정 포맷팅 중 오류가 발생했습니다: {str(e)}"
 
-@log_function_call
 def format_schedule_result(result: str, start_dt: datetime, end_dt: datetime) -> str:
     """예약 결과를 읽기 쉬운 형식으로 변환합니다.
     
@@ -101,5 +96,4 @@ def format_schedule_result(result: str, start_dt: datetime, end_dt: datetime) ->
             
         return result
     except Exception as e:
-        log_error(f"예약 결과 포맷팅 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return f"예약 결과 포맷팅 중 오류가 발생했습니다: {str(e)}"

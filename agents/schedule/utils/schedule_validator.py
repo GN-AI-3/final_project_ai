@@ -1,9 +1,6 @@
 from datetime import datetime
 from core.database import execute_query
-from utils.logger import log_function_call, log_error, log_sql_query
-import traceback
 
-@log_function_call
 def check_same_day(start_dt: datetime) -> str:
     """당일 예약 여부를 확인합니다."""
     try:
@@ -15,10 +12,8 @@ def check_same_day(start_dt: datetime) -> str:
             return "죄송해요. 당일 예약은 불가능해요. 오늘 이후의 날짜를 선택해주세요."
         return None
     except Exception as e:
-        log_error(f"당일 예약 확인 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return f"당일 예약 확인 중 오류가 발생했습니다: {str(e)}"
 
-@log_function_call
 def check_future_date(start_dt: datetime) -> str:
     """미래 날짜 여부를 확인합니다."""
     try:
@@ -28,10 +23,8 @@ def check_future_date(start_dt: datetime) -> str:
             return "죄송해요. 과거 시간으로는 예약할 수 없어요. 오늘 이후의 날짜를 선택해주세요."
         return None
     except Exception as e:
-        log_error(f"미래 날짜 확인 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return f"미래 날짜 확인 중 오류가 발생했습니다: {str(e)}"
 
-@log_function_call
 def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
     """해당 시간대에 이미 예약이 있는지 확인합니다."""
     try:
@@ -41,7 +34,7 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         check_query = f"""
         SELECT start_time, end_time
         FROM pt_schedule
-        WHERE pt_contract_id = 5
+        WHERE pt_contract_id = 7
         AND state = 'confirmed'
         AND (
             (start_time <= '{start_time_str}' AND end_time > '{start_time_str}')
@@ -51,7 +44,6 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         LIMIT 1;
         """
         
-        log_sql_query(check_query)
         result = execute_query(check_query)
         
         # 결과가 없거나 "데이터가 없습니다"인 경우
@@ -74,5 +66,4 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         return None
         
     except Exception as e:
-        log_error(f"예약 중복 확인 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return f"예약 중복 확인 중 오류가 발생했습니다: {str(e)}" 

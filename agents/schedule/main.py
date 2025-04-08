@@ -6,7 +6,7 @@ from graph import run_graph_simulation
 from services.scheduler_service import start_scheduler
 
 # LangSmith 로그 설정
-PROJECT_NAME = os.getenv("LANGSMITH_PROJECT", "default_project")
+PROJECT_NAME = os.getenv("LANGSMITH_PROJECT")
 if PROJECT_NAME:
     logging.langsmith(PROJECT_NAME)
 

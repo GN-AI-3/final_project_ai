@@ -1,26 +1,18 @@
 from datetime import datetime
 from typing import Optional
 import json
-import traceback
 
 from langchain.agents import tool
 
-from ..core.database import execute_query
-from ..utils.date_utils import validate_date_format
-from ..utils.schedule_validator import (
+from core.database import execute_query
+from utils.date_utils import validate_date_format
+from utils.schedule_validator import (
     check_same_day,
     check_future_date,
     check_existing_schedule
 )
-from utils.logger import ( 
-    log_function_call, 
-    log_sql_query, 
-    log_schedule_action, 
-    log_error
-)
 
 @tool
-@log_function_call
 def get_user_schedule(input: str = "") -> str:
     """사용자의 스케줄을 조회합니다.
     
@@ -31,23 +23,21 @@ def get_user_schedule(input: str = "") -> str:
         str: 스케줄 목록 또는 에러 메시지
     """
     try:
-        pt_contract_id = 5
+        pt_contract_id = 7
         
         query = f"""
         SELECT start_time, reservation_id
         FROM pt_schedule
         WHERE pt_contract_id = {pt_contract_id}
         AND start_time > CURRENT_TIMESTAMP
-        AND status = 'scheduled'
+        AND status = 'SCHEDULED'
         ORDER BY start_time
         """
         
-        log_sql_query(query)
         results = execute_query(query)
         
         # 결과가 문자열인 경우 에러 메시지 반환
         if isinstance(results, str):
-            log_error(f"일정 조회 실패: {results}")
             return json.dumps({
                 "success": False,
                 "error": results
@@ -73,17 +63,14 @@ def get_user_schedule(input: str = "") -> str:
                 "success": True,
                 "schedules": schedules
             }
-            log_schedule_action("조회", "일괄", {"count": len(schedules)})
             return json.dumps(response, ensure_ascii=False)
         
-        log_error("예약 일정을 찾을 수 없습니다.")
         return json.dumps({
             "success": False,
             "error": "예약 일정을 찾을 수 없습니다."
         }, ensure_ascii=False)
         
     except Exception as e:
-        log_error(f"일정 조회 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return json.dumps({
             "success": False,
             "error": f"일정 조회 중 오류가 발생했습니다: {str(e)}"
@@ -91,7 +78,6 @@ def get_user_schedule(input: str = "") -> str:
 
 
 @tool
-@log_function_call
 def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
     """스케줄을 추가합니다.
     
@@ -107,12 +93,9 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         # month가 None이 아닌 경우 문자열로 변환
         month_str = str(month) if month is not None else None
         
-        log_schedule_action("추가 시도", "신규", {"day": day, "hour": hour, "month": month_str})
-        
         start_dt, end_dt = validate_date_format(day, hour, month_str)
         
         if start_dt is None:
-            log_error(f"날짜 형식 오류: {end_dt}")
             return json.dumps({
                 "success": False,
                 "error": end_dt
@@ -121,7 +104,6 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         # 1. 당일 예약 방지
         error = check_same_day(start_dt)
         if error:
-            log_error(f"당일 예약 방지: {error}")
             return json.dumps({
                 "success": False,
                 "error": error
@@ -130,7 +112,6 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         # 2. 과거 날짜 예약 방지
         error = check_future_date(start_dt)
         if error:
-            log_error(f"과거 날짜 예약 방지: {error}")
             return json.dumps({
                 "success": False,
                 "error": error
@@ -139,7 +120,6 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         # 3. 예약 중복 방지
         error = check_existing_schedule(start_dt, end_dt)
         if error:
-            log_error(f"예약 중복 방지: {error}")
             return json.dumps({
                 "success": False,
                 "error": error
@@ -148,11 +128,10 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         # 4. 예약 추가
         query = f"""
         INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-        VALUES ('{start_dt}', '{end_dt}', 5, 'scheduled')
+        VALUES ('{start_dt}', '{end_dt}', 5, 'SCHEDULED')
         RETURNING reservation_id;
         """
         
-        log_sql_query(query)
         result = execute_query(query)
         
         if isinstance(result, list) and len(result) > 0 and isinstance(result[0], tuple) and len(result[0]) > 0:
@@ -168,20 +147,14 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
                     "end_time": formatted_end
                 }
             }
-            log_schedule_action("추가 완료", reservation_id, {
-                "start_time": formatted_start,
-                "end_time": formatted_end
-            })
             return json.dumps(response, ensure_ascii=False)
         else:
-            log_error("예약 생성 실패")
             return json.dumps({
                 "success": False,
                 "error": "예약 생성에 실패했습니다."
             }, ensure_ascii=False)
             
     except Exception as e:
-        log_error(f"예약 처리 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return json.dumps({
             "success": False,
             "error": f"예약 처리 중 오류가 발생했어요: {str(e)}"
@@ -189,7 +162,6 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
 
 
 @tool
-@log_function_call
 def modify_schedule(
     reservation_id: str,
     action: str,
@@ -213,13 +185,7 @@ def modify_schedule(
     """
     try:
         # pt_contract_id 설정 (실제로는 사용자 인증에서 가져와야 함)
-        pt_contract_id = 5  # 테스트용 고정값
-        log_schedule_action(f"{action} 시도", reservation_id, {
-            "new_day": new_day,
-            "new_hour": new_hour,
-            "new_month": new_month,
-            "reason": reason
-        })
+        pt_contract_id = 7  # 테스트용 고정값
         
         # 예약 번호 확인
         check_query = f"""
@@ -229,11 +195,9 @@ def modify_schedule(
         AND reservation_id = '{reservation_id}'
         """
         
-        log_sql_query(check_query)
         result = execute_query(check_query)
         
         if not result or result == "데이터가 없습니다.":
-            log_error(f"예약 번호 {reservation_id}에 해당하는 예약을 찾을 수 없습니다.")
             return json.dumps({
                 "success": False,
                 "error": f"예약 번호 {reservation_id}에 해당하는 예약을 찾을 수 없습니다."
@@ -258,8 +222,7 @@ def modify_schedule(
                 pass
         
         # 이미 취소된 예약인 경우
-        if reservation_status == 'cancelled':
-            log_error(f"예약 번호 {reservation_id}는 이미 취소되었습니다.")
+        if reservation_status == 'CANCELLED':
             return json.dumps({
                 "success": False,
                 "error": f"예약 번호 {reservation_id}는 이미 취소되었습니다."
@@ -268,13 +231,11 @@ def modify_schedule(
         # 사유가 없는 경우 사유를 요청
         if reason is None or reason.strip() == "":
             if action == "cancel":
-                log_error("예약을 취소하려면 취소 사유를 알려주세요.")
                 return json.dumps({
                     "success": False,
                     "error": "예약을 취소하려면 취소 사유를 알려주세요."
                 }, ensure_ascii=False)
             else:
-                log_error("예약을 변경하려면 변경 사유를 알려주세요.")
                 return json.dumps({
                     "success": False,
                     "error": "예약을 변경하려면 변경 사유를 알려주세요."
@@ -284,15 +245,14 @@ def modify_schedule(
         if action == "cancel":
             cancel_query = f"""
             UPDATE pt_schedule
-            SET status = 'cancelled',
+            SET status = 'CANCELLED',
                 reason = '{reason}'
             WHERE pt_contract_id = {pt_contract_id}
             AND reservation_id = '{reservation_id}'
-            AND status = 'scheduled'
+            AND status = 'SCHEDULED'
             RETURNING start_time;
             """
             
-            log_sql_query(cancel_query)
             cancel_result = execute_query(cancel_query)
             
             if cancel_result and cancel_result != "데이터가 없습니다.":
@@ -317,10 +277,7 @@ def modify_schedule(
                             "reason": reason
                         }
                     }
-                    log_schedule_action("취소 완료", reservation_id, {
-                        "start_time": formatted_date,
-                        "reason": reason
-                    })
+
                     return json.dumps(response, ensure_ascii=False)
                 except Exception:
                     response = {
@@ -331,10 +288,9 @@ def modify_schedule(
                             "reason": reason
                         }
                     }
-                    log_schedule_action("취소 완료", reservation_id, {"reason": reason})
+
                     return json.dumps(response, ensure_ascii=False)
             else:
-                log_error("예약 취소에 실패했습니다.")
                 return json.dumps({
                     "success": False,
                     "error": "예약 취소에 실패했습니다."
@@ -346,7 +302,6 @@ def modify_schedule(
             start_dt, end_dt = validate_date_format(new_day, new_hour, new_month)
             
             if not start_dt or not end_dt:
-                log_error("유효하지 않은 날짜 또는 시간입니다.")
                 return json.dumps({
                     "success": False,
                     "error": "유효하지 않은 날짜 또는 시간입니다."
@@ -355,7 +310,6 @@ def modify_schedule(
             # 당일 예약 체크
             error = check_same_day(start_dt)
             if error:
-                log_error(f"당일 예약 방지: {error}")
                 return json.dumps({
                     "success": False,
                     "error": error
@@ -364,7 +318,6 @@ def modify_schedule(
             # 과거 날짜 체크
             error = check_future_date(start_dt)
             if error:
-                log_error(f"과거 날짜 예약 방지: {error}")
                 return json.dumps({
                     "success": False,
                     "error": error
@@ -373,7 +326,6 @@ def modify_schedule(
             # 중복 예약 체크
             error = check_existing_schedule(start_dt, end_dt)
             if error:
-                log_error(f"예약 중복 방지: {error}")
                 return json.dumps({
                     "success": False,
                     "error": error
@@ -382,26 +334,24 @@ def modify_schedule(
             # 예약 상태 변경
             update_query = f"""
             UPDATE pt_schedule
-            SET status = 'changed',
+            SET status = 'CHANGED',
                 reason = '{reason}'
             WHERE pt_contract_id = {pt_contract_id}
             AND reservation_id = '{reservation_id}'
-            AND status = 'scheduled'
+            AND status = 'SCHEDULED'
             RETURNING start_time;
             """
             
-            log_sql_query(update_query)
             update_result = execute_query(update_query)
             
             if update_result and update_result != "데이터가 없습니다.":
                 # 새 예약 추가
                 insert_query = f"""
                 INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-                VALUES ('{start_dt}', '{end_dt}', 5, 'scheduled')
+                VALUES ('{start_dt}', '{end_dt}', 7, 'SCHEDULED')
                 RETURNING reservation_id;
                 """
                 
-                log_sql_query(insert_query)
                 new_result = execute_query(insert_query)
                 
                 if new_result and new_result != "데이터가 없습니다.":
@@ -438,40 +388,31 @@ def modify_schedule(
                                 "reason": reason
                             }
                         }
-                        log_schedule_action("변경 완료", reservation_id, {
-                            "old_date": old_date_str,
-                            "new_date": new_date_str,
-                            "new_reservation_id": new_reservation_id,
-                            "reason": reason
-                        })
+
                         return json.dumps(response, ensure_ascii=False)
                     except Exception as e:
-                        log_error(f"예약 변경 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
+
                         return json.dumps({
                             "success": False,
                             "error": f"예약 변경 중 오류가 발생했습니다: {str(e)}"
                         }, ensure_ascii=False)
                 else:
-                    log_error("새 예약 추가에 실패했습니다.")
                     return json.dumps({
                         "success": False,
                         "error": "새 예약 추가에 실패했습니다."
                     }, ensure_ascii=False)
             else:
-                log_error("예약 상태 변경에 실패했습니다.")
                 return json.dumps({
                     "success": False,
                     "error": "예약 상태 변경에 실패했습니다."
                 }, ensure_ascii=False)
         
-        log_error("잘못된 작업입니다. 'cancel' 또는 'change'를 입력해주세요.")
         return json.dumps({
             "success": False,
             "error": "잘못된 작업입니다. 'cancel' 또는 'change'를 입력해주세요."
         }, ensure_ascii=False)
-            
+        
     except Exception as e:
-        log_error(f"예약 처리 중 오류 발생: {str(e)}", error_type=type(e).__name__, stack_trace=traceback.format_exc())
         return json.dumps({
             "success": False,
             "error": f"예약 처리 중 오류가 발생했어요: {str(e)}"
