@@ -42,3 +42,5 @@ class ExerciseAgent(BaseAgent):
             display(Image(workflow.get_graph().draw_mermaid_png()))
         except Exception:
             pass
+
+        return final_state.message

@@ -1,21 +1,23 @@
-from ..models.state_models import RoutingState
-from ..prompts.exercise_form_prompts import EXERCISE_FORM_PROMPT, CONFIRM_EXERCISE_FORM_PROMPT
+from typing import Dict, Any
+from ..prompts.exercise_routing_prompts import ROUTING_PROMPT
 from langchain_openai import ChatOpenAI
-from langchain.tools import Tool, StructuredTool
-from ..tools.exercise_form_tools import web_search, get_user_info, get_exercise_info
-from ..tools.exercise_routine_tools import master_select_db, get_all_table_schema, master_select_db_multi
 from dotenv import load_dotenv
+from ..models.state_models import RoutingState
+from langchain.tools import Tool
+from ..tools.exercise_routing_tools import save_exercise_record
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
+from langchain.tools import StructuredTool
+from ..tools.exercise_routine_tools import get_all_table_schema, master_select_db_multi
 from ..models.input_models import MasterSelectMultiInput, EmptyArgs
 
 load_dotenv()
 
 tools = [
     Tool.from_function(
-        func=web_search,
-        name="web_search",
-        description="웹 검색을 통해 운동 자세 정보를 찾습니다."
+        func=save_exercise_record,
+        name="save_exercise_record",
+        description="운동 일지 저장"
     ),
     StructuredTool.from_function(
         func=get_all_table_schema,
@@ -31,19 +33,21 @@ tools = [
     ),
 ]
 
-def exercise_form_agent(state: RoutingState, llm: ChatOpenAI):
-    """운동 자세 추천 노드"""
+def routing(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
+    """라우팅 노드"""
+    message = state.message
     prompt = ChatPromptTemplate.from_messages([
-        ("system", EXERCISE_FORM_PROMPT),
-        ("user", "{message}\n\n[MEMBER_ID: {member_id}]"),
+        ("system", ROUTING_PROMPT),
+        ("user", "{message}"),
+        ("user", "{user_id}"),
         MessagesPlaceholder(variable_name="agent_scratchpad")
     ])
 
     agent = create_tool_calling_agent(llm, tools, prompt)
 
     agent_executor = AgentExecutor(
-        agent=agent, 
-        tools=tools, 
+        agent=agent,
+        tools=tools,
         verbose=True,
         handle_parse_errors=True,
     )
@@ -51,20 +55,10 @@ def exercise_form_agent(state: RoutingState, llm: ChatOpenAI):
     user_id = state.user_id
 
     response = agent_executor.invoke({
-        "message": state.message,
-        "member_id": 1 # user_id
+        "message": message,
+        "user_id": user_id
     })
-    print("exercise form response: ", response["output"])
-    state.message = response["output"]
-    return state
 
-def confirm_exercise_form_agent(state: RoutingState, llm: ChatOpenAI):
-    """추천된 운동 자세 관련 메시지를 확인하고 수정 요청 노드"""
-    # tools = [web_search]
-    # agent = llm.bind_tools(tools)
-    message = state.message
-    prompt = CONFIRM_EXERCISE_FORM_PROMPT.format(message=message)
-    response = llm.invoke(prompt)
-    print("confirm exercise form response: ", response.content)
-    state.message = response.content
+    print("routing response: ", response["output"])
+    state.category = response["output"]
     return state
