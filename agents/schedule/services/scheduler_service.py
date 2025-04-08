@@ -3,17 +3,17 @@ import time
 from threading import Thread
 from core.database import execute_query
 
-def update_expired_reservations() -> None:
-    """만료된 예약을 업데이트합니다.
+def update_expired_schedules() -> None:
+    """만료된 스케줄을 업데이트합니다.
     
-    만료된 예약의 상태를 'completed'로 변경합니다.
+    만료된 스케줄의 상태를 'completed'로 변경합니다.
     """
     try:
         query = """
-        UPDATE reservations
+        UPDATE pt_schedule
         SET state = 'completed'
         WHERE end_time < CURRENT_TIMESTAMP
-        AND state = 'confirmed'
+        AND state = 'scheduled'
         """
         execute_query(query)
     except Exception as e:
@@ -23,9 +23,9 @@ def update_expired_reservations() -> None:
 def run_scheduler() -> None:
     """스케줄러를 실행합니다.
     
-    매 60분마다 만료된 예약을 업데이트합니다.
+    매 60분마다 만료된 스케줄을 업데이트합니다.
     """
-    schedule.every(60).minutes.do(update_expired_reservations)
+    schedule.every(60).minutes.do(update_expired_schedules)
     
     while True:
         try:

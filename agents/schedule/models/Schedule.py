@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 
-class Reservation:
+class Schedule:
     """예약 정보를 나타내는 모델 클래스
     
     Attributes:
@@ -37,7 +37,7 @@ class Reservation:
         self.status = status
     
     @classmethod
-    def from_db_row(cls, row: Tuple) -> Optional['Reservation']:
+    def from_db_row(cls, row: Tuple) -> Optional['Schedule']:
         """데이터베이스 행으로부터 Reservation 객체를 생성합니다.
         
         Args:

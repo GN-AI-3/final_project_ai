@@ -248,8 +248,8 @@ def validate_date_format(
         if input_day > max_day:
             if month == 2:
                 year_type = "윤년" if max_day == 29 else "평년"
-                return None, f"죄송해요. {year}년 2월은 {year_type}으로 {max_day}일까지 있어요. 1-{max_day} 사이의 날짜를 다시 입력해주세요."
-            return None, f"죄송해요. {month}월은 {max_day}일까지 있어요. 1-{max_day} 사이의 날짜를 다시 입력해주세요."
+                return None, f"죄송해요. {year}년 2월은 {year_type}으로 {max_day}일까지 있어요. 1-{max_day}일 사이의 날짜를 다시 입력해주세요."
+            return None, f"죄송해요. {month}월은 {max_day}일까지 있어요. 1-{max_day}일 사이의 날짜를 다시 입력해주세요."
 
         start_dt = datetime(year, month, input_day, input_hour, 0)
         end_dt = start_dt + timedelta(hours=1)

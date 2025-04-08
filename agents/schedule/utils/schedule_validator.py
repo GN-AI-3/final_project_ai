@@ -32,7 +32,7 @@ def check_future_date(start_dt: datetime) -> str:
         return f"미래 날짜 확인 중 오류가 발생했습니다: {str(e)}"
 
 @log_function_call
-def check_existing_reservation(start_dt: datetime, end_dt: datetime) -> str:
+def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
     """해당 시간대에 이미 예약이 있는지 확인합니다."""
     try:
         start_time_str = start_dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -40,8 +40,8 @@ def check_existing_reservation(start_dt: datetime, end_dt: datetime) -> str:
         
         check_query = f"""
         SELECT start_time, end_time
-        FROM reservations
-        WHERE pt_linked_id = 5
+        FROM pt_schedule
+        WHERE pt_contract_id = 5
         AND state = 'confirmed'
         AND (
             (start_time <= '{start_time_str}' AND end_time > '{start_time_str}')

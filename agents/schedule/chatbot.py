@@ -1,6 +1,6 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableMap
@@ -10,7 +10,7 @@ from langchain.agents import AgentExecutor
 from langchain.agents.format_scratchpad import format_to_openai_function_messages
 from langchain.agents.output_parsers import OpenAIFunctionsAgentOutputParser
 
-from tools import get_user_schedule, add_reservation, modify_reservation
+from tools import get_user_schedule, add_schedule, modify_schedule
 from utils.date_manager import DateManager
 from utils.prompt_manager import PromptManager
 
@@ -36,7 +36,7 @@ class ScheduleChatbot:
 
     def _initialize_tools(self) -> None:
         """도구 초기화"""
-        self.tools = [get_user_schedule, add_reservation, modify_reservation]
+        self.tools = [get_user_schedule, add_schedule, modify_schedule]
         self.functions = [convert_to_openai_function(t) for t in self.tools]
 
     def _initialize_prompt(self) -> None:
@@ -46,7 +46,7 @@ class ScheduleChatbot:
         system_prompt = (
             f"오늘은 {formatted_date}입니다.\n\n"
             f"{system_prompt}\n\n"
-            "예약은 오늘 이후의 날짜로만 가능해요."
+            "스케줄은 오늘 이후의 날짜로만 가능해요."
         )
         self.prompt = ChatPromptTemplate.from_messages([
             MessagesPlaceholder(variable_name="chat_history"),

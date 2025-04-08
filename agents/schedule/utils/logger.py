@@ -81,7 +81,7 @@ def log_api_response(endpoint, response_data, status_code=None):
     if response_data:
         logger.debug(f"응답 데이터: {json.dumps(response_data, ensure_ascii=False)}")
 
-def log_reservation_action(action, reservation_no, details=None):
+def log_schedule_action(action, reservation_no, details=None):
     """예약 관련 액션 로깅"""
     logger.info(f"예약 액션: {action} - 예약번호: {reservation_no}")
     if details:

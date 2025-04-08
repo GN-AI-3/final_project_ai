@@ -1,31 +1,34 @@
 from datetime import datetime
-from typing import Optional, Tuple, List, Union
+from typing import Optional
 import json
 import traceback
 
 from langchain.agents import tool
 
-from core.database import execute_query
-from utils.date_utils import validate_date_format
-from utils.general_utils import format_schedule_result, format_reservation_result
-from utils.reservation_validator import (
+from ..core.database import execute_query
+from ..utils.date_utils import validate_date_format
+from ..utils.schedule_validator import (
     check_same_day,
     check_future_date,
-    check_existing_reservation
+    check_existing_schedule
 )
-from utils.logger import log_function_call, log_sql_query, log_reservation_action, log_error
-
+from utils.logger import ( 
+    log_function_call, 
+    log_sql_query, 
+    log_schedule_action, 
+    log_error
+)
 
 @tool
 @log_function_call
 def get_user_schedule(input: str = "") -> str:
-    """사용자의 예약 일정을 조회합니다.
+    """사용자의 스케줄을 조회합니다.
     
     Args:
         input: 사용자 입력 (사용되지 않음)
         
     Returns:
-        str: 예약 일정 목록 또는 에러 메시지
+        str: 스케줄 목록 또는 에러 메시지
     """
     try:
         pt_contract_id = 5
@@ -35,7 +38,7 @@ def get_user_schedule(input: str = "") -> str:
         FROM pt_schedule
         WHERE pt_contract_id = {pt_contract_id}
         AND start_time > CURRENT_TIMESTAMP
-        AND status = 'confirmed'
+        AND status = 'scheduled'
         ORDER BY start_time
         """
         
@@ -70,7 +73,7 @@ def get_user_schedule(input: str = "") -> str:
                 "success": True,
                 "schedules": schedules
             }
-            log_reservation_action("조회", "일괄", {"count": len(schedules)})
+            log_schedule_action("조회", "일괄", {"count": len(schedules)})
             return json.dumps(response, ensure_ascii=False)
         
         log_error("예약 일정을 찾을 수 없습니다.")
@@ -89,8 +92,8 @@ def get_user_schedule(input: str = "") -> str:
 
 @tool
 @log_function_call
-def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
-    """예약을 추가합니다.
+def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
+    """스케줄을 추가합니다.
     
     Args:
         day: 예약할 날짜 (문자열로 입력)
@@ -104,7 +107,7 @@ def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
         # month가 None이 아닌 경우 문자열로 변환
         month_str = str(month) if month is not None else None
         
-        log_reservation_action("추가 시도", "신규", {"day": day, "hour": hour, "month": month_str})
+        log_schedule_action("추가 시도", "신규", {"day": day, "hour": hour, "month": month_str})
         
         start_dt, end_dt = validate_date_format(day, hour, month_str)
         
@@ -134,7 +137,7 @@ def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
             }, ensure_ascii=False)
 
         # 3. 예약 중복 방지
-        error = check_existing_reservation(start_dt, end_dt)
+        error = check_existing_schedule(start_dt, end_dt)
         if error:
             log_error(f"예약 중복 방지: {error}")
             return json.dumps({
@@ -145,7 +148,7 @@ def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
         # 4. 예약 추가
         query = f"""
         INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-        VALUES ('{start_dt}', '{end_dt}', 5, 'confirmed')
+        VALUES ('{start_dt}', '{end_dt}', 5, 'scheduled')
         RETURNING reservation_id;
         """
         
@@ -165,7 +168,7 @@ def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
                     "end_time": formatted_end
                 }
             }
-            log_reservation_action("추가 완료", reservation_id, {
+            log_schedule_action("추가 완료", reservation_id, {
                 "start_time": formatted_start,
                 "end_time": formatted_end
             })
@@ -187,7 +190,7 @@ def add_reservation(day: str, hour: str, month: Optional[str] = None) -> str:
 
 @tool
 @log_function_call
-def modify_reservation(
+def modify_schedule(
     reservation_id: str,
     action: str,
     new_day: Optional[int] = None,
@@ -211,7 +214,7 @@ def modify_reservation(
     try:
         # pt_contract_id 설정 (실제로는 사용자 인증에서 가져와야 함)
         pt_contract_id = 5  # 테스트용 고정값
-        log_reservation_action(f"{action} 시도", reservation_id, {
+        log_schedule_action(f"{action} 시도", reservation_id, {
             "new_day": new_day,
             "new_hour": new_hour,
             "new_month": new_month,
@@ -285,7 +288,7 @@ def modify_reservation(
                 reason = '{reason}'
             WHERE pt_contract_id = {pt_contract_id}
             AND reservation_id = '{reservation_id}'
-            AND status = 'confirmed'
+            AND status = 'scheduled'
             RETURNING start_time;
             """
             
@@ -314,7 +317,7 @@ def modify_reservation(
                             "reason": reason
                         }
                     }
-                    log_reservation_action("취소 완료", reservation_id, {
+                    log_schedule_action("취소 완료", reservation_id, {
                         "start_time": formatted_date,
                         "reason": reason
                     })
@@ -328,7 +331,7 @@ def modify_reservation(
                             "reason": reason
                         }
                     }
-                    log_reservation_action("취소 완료", reservation_id, {"reason": reason})
+                    log_schedule_action("취소 완료", reservation_id, {"reason": reason})
                     return json.dumps(response, ensure_ascii=False)
             else:
                 log_error("예약 취소에 실패했습니다.")
@@ -368,7 +371,7 @@ def modify_reservation(
                 }, ensure_ascii=False)
             
             # 중복 예약 체크
-            error = check_existing_reservation(start_dt, end_dt)
+            error = check_existing_schedule(start_dt, end_dt)
             if error:
                 log_error(f"예약 중복 방지: {error}")
                 return json.dumps({
@@ -383,7 +386,7 @@ def modify_reservation(
                 reason = '{reason}'
             WHERE pt_contract_id = {pt_contract_id}
             AND reservation_id = '{reservation_id}'
-            AND status = 'confirmed'
+            AND status = 'scheduled'
             RETURNING start_time;
             """
             
@@ -394,7 +397,7 @@ def modify_reservation(
                 # 새 예약 추가
                 insert_query = f"""
                 INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-                VALUES ('{start_dt}', '{end_dt}', '{pt_contract_id}', 'confirmed')
+                VALUES ('{start_dt}', '{end_dt}', 5, 'scheduled')
                 RETURNING reservation_id;
                 """
                 
@@ -425,17 +428,17 @@ def modify_reservation(
                         response = {
                             "success": True,
                             "action": "change",
-                            "old_reservation": {
+                            "old_schedule": {
                                 "reservation_id": reservation_id,
                                 "start_time": old_date_str
                             },
-                            "new_reservation": {
+                            "new_schedule": {
                                 "reservation_id": new_reservation_id,
                                 "start_time": new_date_str,
                                 "reason": reason
                             }
                         }
-                        log_reservation_action("변경 완료", reservation_id, {
+                        log_schedule_action("변경 완료", reservation_id, {
                             "old_date": old_date_str,
                             "new_date": new_date_str,
                             "new_reservation_id": new_reservation_id,

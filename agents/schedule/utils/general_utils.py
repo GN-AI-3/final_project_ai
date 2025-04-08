@@ -50,7 +50,7 @@ def format_schedule_result(result_str: str) -> str:
         return f"일정 포맷팅 중 오류가 발생했습니다: {str(e)}"
 
 @log_function_call
-def format_reservation_result(result: str, start_dt: datetime, end_dt: datetime) -> str:
+def format_schedule_result(result: str, start_dt: datetime, end_dt: datetime) -> str:
     """예약 결과를 읽기 쉬운 형식으로 변환합니다.
     
     Args:
