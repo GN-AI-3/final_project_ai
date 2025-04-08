@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Dict
+from typing_extensions import TypedDict
 
 class GetUserInfoInput(BaseModel):
     member_id: str
@@ -15,3 +16,10 @@ class MasterSelectMultiInput(BaseModel):
 
 class EmptyArgs(BaseModel):
     pass
+
+class ExerciseRecordInput(TypedDict):
+    member_id: int
+    exercise_id: int
+    date: str
+    record_data: dict
+    memo_data: dict

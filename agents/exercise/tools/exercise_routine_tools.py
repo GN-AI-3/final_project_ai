@@ -21,7 +21,7 @@ DB_CONFIG = {
 TABLE_SCHEMA = {
     "exercise_record": {
         "columns": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
-        "description": "회원의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다. exercise_id는 exercise 테이블의 id와 연결해 운동 이름(name)을 조회해야 합니다."
+        "description": "사용자의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다. exercise_id는 exercise 테이블의 id와 연결해 운동 이름(name)을 조회해야 합니다."
     },
     "exercise": {
         "columns": ["id", "name", "exercise_type"],
@@ -29,7 +29,7 @@ TABLE_SCHEMA = {
     },
     "member": {
         "columns": ["id", "name", "email", "phone", "profile_image", "goal"],
-        "description": "회원 정보. goal은 사용자의 운동 목표입니다 (예: 벌크업, 체중 감량)."
+        "description": "사용자 정보. goal은 사용자의 운동 목표입니다 (예: 벌크업, 체중 감량)."
     }
 }
 
