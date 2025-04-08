@@ -6,35 +6,35 @@ class Reservation:
     """예약 정보를 나타내는 모델 클래스
     
     Attributes:
-        reservation_no: 예약 번호
-        pt_linked_id: 환자 ID
+        reservation_id: 예약 번호
+        pt_contract_id: 환자 ID
         start_time: 예약 시작 시간
         end_time: 예약 종료 시간
-        state: 예약 상태 (기본값: 'confirmed')
+        status: 예약 상태 (기본값: 'confirmed')
     """
     
     def __init__(
         self,
-        reservation_no: str,
-        pt_linked_id: int,
+        reservation_id: str,
+        pt_contract_id: int,
         start_time: datetime,
         end_time: datetime,
-        state: str = 'confirmed'
+        status: str = 'confirmed'
     ) -> None:
         """예약 객체를 초기화합니다.
         
         Args:
-            reservation_no: 예약 번호
-            pt_linked_id: 환자 ID
+            reservation_id: 예약 번호
+            pt_contract_id: 환자 ID
             start_time: 예약 시작 시간
             end_time: 예약 종료 시간
-            state: 예약 상태 (기본값: 'confirmed')
+            status: 예약 상태 (기본값: 'confirmed')
         """
-        self.reservation_no = reservation_no
-        self.pt_linked_id = pt_linked_id
+        self.reservation_id = reservation_id
+        self.pt_contract_id = pt_contract_id
         self.start_time = start_time
         self.end_time = end_time
-        self.state = state
+        self.status = status
     
     @classmethod
     def from_db_row(cls, row: Tuple) -> Optional['Reservation']:
@@ -49,9 +49,9 @@ class Reservation:
         if not row:
             return None
         return cls(
-            reservation_no=row[0],
-            pt_linked_id=row[1],
+            reservation_id=row[0],
+            pt_contract_id=row[1],
             start_time=row[2],
             end_time=row[3],
-            state=row[4]
+            status=row[4]
         ) 
