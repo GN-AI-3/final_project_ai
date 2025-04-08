@@ -1,177 +1,86 @@
-from langgraph.graph import StateGraph
-from langchain_openai import ChatOpenAI
-from agents.food.nodes import (
-    UserState,
-    nutrition_calculation_node,
-    meal_planning_node,
-    vector_search_node,
-    self_rag_node,
-    evaluate_data_node,
-    bmi_calculation_node,
-    nutrition_analysis_node,
-    recommend_supplements_node
-)
 from typing import Dict, Any, List, Optional
-from langchain.graphs import END
-from agents.food.common.state import AgentState
-from agents.food.subagents.meal_input_agent.agent import MealInputAgent
-from agents.food.subagents.nutrient_agent.agent import NutrientAgent
- 
-import os
-from dotenv import load_dotenv
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-
-# 한글 폰트 설정
-plt.rcParams['font.family'] = 'Malgun Gothic'
-
-# 환경 변수 로드
-load_dotenv()
-
-def create_workflow():
-    """
-    워크플로우 그래프 생성 및 실행
-    1. StateGraph 생성
-    2. 노드 추가 및 연결
-    3. Conditional Edge 설정
-    4. 워크플로우 실행 및 결과 출력
-    """
-    # LLM 초기화
-    llm = ChatOpenAI(
-        model="gpt-3.5-turbo",
-
-        temperature=0.7,
-        openai_api_key=os.getenv("OPENAI_API_KEY")
-    )
-    
-    # 워크플로우 그래프 생성
-    workflow = StateGraph(UserState)
-    
-    # 노드 추가
-    workflow.add_node("vector_search", vector_search_node)
-    workflow.add_node("evaluate_data", lambda state: evaluate_data_node(state, llm))
-    workflow.add_node("self_rag", lambda state: self_rag_node(state, llm))
-    workflow.add_node("bmi_calculation", bmi_calculation_node)
-    workflow.add_node("nutrition_calculation", nutrition_calculation_node)
-    workflow.add_node("nutrition_analysis_node", lambda state: nutrition_analysis_node(state, llm))
-    workflow.add_node("recommend_supplements", lambda state: recommend_supplements_node(state, llm)) 
-    workflow.add_node("meal_planning", lambda state: meal_planning_node(state, llm))
-    
-    # 조건부 엣지 설정
-    def route_by_confidence(state: UserState) -> str:
-        confidence = state.get("confidence", 0.0)
-        return "high_confidence" if confidence > 0.8 else "low_confidence"
-    
-    workflow.add_conditional_edges(
-        "evaluate_data",
-        route_by_confidence,
-        {
-            "high_confidence": "bmi_calculation",
-            "low_confidence": "self_rag"
-        }
-    )
-    
-    # 일반 엣지 설정
-    workflow.add_edge("vector_search", "evaluate_data")
-    workflow.add_edge("self_rag", "bmi_calculation")
-    workflow.add_edge("bmi_calculation", "nutrition_calculation")
-    workflow.add_edge("nutrition_calculation", "nutrition_analysis_node")
-    workflow.add_edge("nutrition_analysis_node", "recommend_supplements")
-    workflow.add_edge("recommend_supplements", "meal_planning")
-    
-    # 시작 노드 설정
-    workflow.set_entry_point("vector_search")
-    
-    return workflow.compile()
-
-def run_workflow(initial_state: UserState):
-    """
-    워크플로우 실행 및 결과 출력
-    """
-    app = create_workflow()
-    result = app.invoke(initial_state)
-    
- 
-    
-    print("\n=== 입력한 식품 정보 ===")
-    for food in result.get("user_data", {}).get("target_foods", []):
-        print(f"🔹 식품명: {food}")
-        if food in result.get("food_info", {}):
-            info = result["food_info"][food]
-            print(f"🔹 영양 정보: {info}")
-        else:
-            print("🔹 영양 정보: 정보 없음")
-    
-    print("\n=== 신체 정보 ===")
-    print(f"🔹 BMI: {result.get('bmi', '정보 없음'):.1f} ({result.get('bmi_status', '정보 없음')})")
-    print(f"🔹 목표: {result.get('user_data', {}).get('goal', '정보 없음')}")
-    
-    print("\n=== 영양 분석 ===")
-    nutrition_analysis = result.get("nutrition_analysis", {})
-    print(f"🔹 식단 평가: {nutrition_analysis.get('evaluation', '정보 없음')}")
-    print("🔹 부족한 영양소: ")
-    deficient_nutrients = nutrition_analysis.get("deficient_nutrients", [])
-    if deficient_nutrients:
-        for nutrient in deficient_nutrients:
-            print(f"  - {nutrient}")
-    else:
-        print("  - 부족한 영양소 정보 없음")
-    
-    print("\n=== 추천 보완 식품 ===")
-    if "supplement_recommendations" in result:
-        if result["supplement_recommendations"]:
-            for food in result["supplement_recommendations"]:
-                print(f"\n{food.get('name', '이름 없음')}:")
-                print(f"  - 이유: {food.get('reason', '정보 없음')}")
-        else:
-            print("추천 보완 식품 정보가 없습니다.")
-    else:
-        print("추천 보완 식품 정보가 없습니다.")
-
-    
-    print("\n=== 추천 식단 ===")
-    if "meal_plan" in result:
-        if result["meal_plan"]:
-            print(result["meal_plan"])  # LLM 응답을 텍스트 그대로 출력
-        else:
-            print("추천 식단 정보가 없습니다.")
-    else:
-        print("추천 식단 정보가 없습니다.")
-    
-    return result
+from langchain.graphs import StateGraph
+from langchain_openai import ChatOpenAI
+from agents.food.nodes import UserState
+from agents.food.common.tools import (
+    get_user_info_tool,
+    get_food_nutrition_tool,
+    save_meal_record_tool,
+    get_today_meals_tool,
+    get_weekly_meals_tool,
+    get_diet_plan_tool,
+    get_user_preferences_tool,
+    recommend_foods_tool
+)
 
 class MealNutrientWorkflow:
-    """식사 입력 및 영양소 분석 워크플로우"""
+    """식사 입력과 영양 분석을 위한 워크플로우"""
     
-    def __init__(self, meal_input_agent: MealInputAgent, nutrient_agent: NutrientAgent):
-        """워크플로우 초기화"""
-        self.meal_input_agent = meal_input_agent
-        self.nutrient_agent = nutrient_agent
-        self.workflow = self._create_workflow()
-    
-    def _create_workflow(self) -> StateGraph:
-        """워크플로우 생성"""
-        workflow = StateGraph(AgentState)
+    def __init__(self, llm: ChatOpenAI):
+        self.llm = llm
+        self.graph = self._create_graph()
+        
+    def _create_graph(self) -> StateGraph:
+        """워크플로우 그래프 생성"""
+        workflow = StateGraph(UserState)
         
         # 노드 추가
-        workflow.add_node("process_meal_input", self.meal_input_agent.process)
-        workflow.add_node("analyze_nutrition", self.nutrient_agent.process)
+        workflow.add_node("get_user_info", self._get_user_info)
+        workflow.add_node("get_meal_records", self._get_meal_records)
+        workflow.add_node("analyze_nutrition", self._analyze_nutrition)
+        workflow.add_node("recommend_foods", self._recommend_foods)
         
         # 엣지 추가
-        workflow.add_edge("process_meal_input", "analyze_nutrition")
-        workflow.add_edge("analyze_nutrition", END)
+        workflow.add_edge("get_user_info", "get_meal_records")
+        workflow.add_edge("get_meal_records", "analyze_nutrition")
+        workflow.add_edge("analyze_nutrition", "recommend_foods")
         
-        # 진입점 설정
-        workflow.set_entry_point("process_meal_input")
+        # 시작 노드 설정
+        workflow.set_entry_point("get_user_info")
         
         return workflow.compile()
     
-    async def run(self, state: AgentState) -> AgentState:
+    def _get_user_info(self, state: UserState) -> UserState:
+        """사용자 정보 조회"""
+        user_info = get_user_info_tool(state.user_id)
+        state.user_info = user_info
+        return state
+    
+    def _get_meal_records(self, state: UserState) -> UserState:
+        """식사 기록 조회"""
+        meal_records = get_weekly_meals_tool(state.user_id)
+        state.meal_records = meal_records
+        return state
+    
+    def _analyze_nutrition(self, state: UserState) -> UserState:
+        """영양 분석"""
+        # 영양 분석 로직 구현
+        state.food_info = {
+            "total_calories": 0,
+            "total_protein": 0,
+            "total_carbs": 0,
+            "total_fat": 0
+        }
+        
+        for meal in state.meal_records:
+            food_name = meal.get("food_name", "")
+            if food_name:
+                food_nutrition = get_food_nutrition_tool(food_name)
+                state.food_info["total_calories"] += food_nutrition.get("calories", 0)
+                state.food_info["total_protein"] += food_nutrition.get("protein", 0)
+                state.food_info["total_carbs"] += food_nutrition.get("carbs", 0)
+                state.food_info["total_fat"] += food_nutrition.get("fat", 0)
+        
+        return state
+    
+    def _recommend_foods(self, state: UserState) -> UserState:
+        """식품 추천"""
+        recommended_foods = recommend_foods_tool(state.user_id)
+        state.recommended_foods = recommended_foods
+        return state
+    
+    def run(self, user_id: int) -> Dict[str, Any]:
         """워크플로우 실행"""
-        try:
-            # 워크플로우 실행
-            final_state = await self.workflow.ainvoke(state)
-            return final_state
-        except Exception as e:
-            state.error = str(e)
-            return state
+        initial_state = UserState(user_id=user_id)
+        final_state = self.graph.invoke(initial_state)
+        return final_state.dict()

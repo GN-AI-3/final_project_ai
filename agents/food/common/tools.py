@@ -7,120 +7,57 @@ from langchain.prompts import ChatPromptTemplate
 import json
 from langchain.tools import Tool, tool
 from agents.food.common.db import (
-    get_user_info as db_get_user_info,
-    get_food_nutrition as db_get_food_nutrition,
-    save_meal_record as db_save_meal_record,
-    get_today_meals as db_get_today_meals,
-    get_weekly_meals as db_get_weekly_meals,
-    get_diet_plan as db_get_diet_plan,
-    get_user_preferences_db as db_get_user_preferences_db,
-    recommend_foods as db_recommend_foods
+    get_user_info,
+    get_food_nutrition,
+    save_meal_record,
+    get_today_meals,
+    get_weekly_meals,
+    get_diet_plan,
+    get_user_preferences_db,
+    recommend_foods
 )
 
 load_dotenv()
 
 @tool
-async def get_user_info(user_id: int) -> Dict[str, Any]:
+async def get_user_info_tool(user_id: int) -> Dict[str, Any]:
     """사용자 정보를 조회합니다."""
-    # 데이터베이스에서 사용자 정보 조회
-    user_info = db_get_user_info(user_id)
-    if user_info:
-        return user_info
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return {"user_id": user_id, "weight": 70, "activity_level": "보통"}
+    return get_user_info(user_id)
 
 @tool
-async def get_food_nutrition(food_name: str) -> Dict[str, Any]:
+async def get_food_nutrition_tool(food_name: str) -> Dict[str, Any]:
     """음식의 영양 정보를 조회합니다."""
-    # 데이터베이스에서 음식 영양 정보 조회
-    food_nutrition = db_get_food_nutrition(food_name)
-    if food_nutrition:
-        return food_nutrition
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return {"name": food_name, "calories": 100, "protein": 10, "carbs": 20, "fat": 5}
+    return get_food_nutrition(food_name)
 
 @tool
-async def save_meal_record(user_id: int, meal_data: Dict[str, Any]) -> bool:
+async def save_meal_record_tool(user_id: int, meal_data: Dict[str, Any]) -> bool:
     """식사 기록을 저장합니다."""
-    # 데이터베이스에 식사 기록 저장
-    try:
-        return db_save_meal_record(
-            user_id=user_id,
-            meal_type=meal_data.get("meal_type", "기타"),
-            food_name=meal_data.get("food_name", ""),
-            portion=meal_data.get("portion", 1.0),
-            unit=meal_data.get("unit", "개"),
-            calories=meal_data.get("calories", 0.0),
-            protein=meal_data.get("protein", 0.0),
-            carbs=meal_data.get("carbs", 0.0),
-            fat=meal_data.get("fat", 0.0)
-        )
-    except Exception as e:
-        print(f"식사 기록 저장 중 오류 발생: {e}")
-        return False
+    return save_meal_record(user_id, meal_data)
 
 @tool
-async def get_today_meals(user_id: int) -> List[Dict[str, Any]]:
+async def get_today_meals_tool(user_id: int) -> List[Dict[str, Any]]:
     """오늘의 식사 기록을 조회합니다."""
-    # 데이터베이스에서 오늘의 식사 기록 조회
-    today_meals = db_get_today_meals(user_id)
-    if today_meals:
-        return today_meals
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return [{"meal_type": "아침", "food_name": "계란", "calories": 70}]
+    return get_today_meals(user_id)
 
 @tool
-async def get_weekly_meals(user_id: int) -> List[Dict[str, Any]]:
+async def get_weekly_meals_tool(user_id: int) -> List[Dict[str, Any]]:
     """주간 식사 기록을 조회합니다."""
-    # 데이터베이스에서 주간 식사 기록 조회
-    weekly_meals = db_get_weekly_meals(user_id)
-    if weekly_meals:
-        return weekly_meals
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return [{"meal_type": "아침", "food_name": "계란", "calories": 70}]
+    return get_weekly_meals(user_id)
 
 @tool
-async def get_diet_plan(user_id: int) -> Dict[str, Any]:
+async def get_diet_plan_tool(diet_type: str, user_gender: str) -> Dict[str, Any]:
     """식단 계획을 조회합니다."""
-    # 사용자 정보 조회
-    user_info = db_get_user_info(user_id)
-    if not user_info:
-        return {"plan": "균형 잡힌 식단"}
-    
-    # 데이터베이스에서 식단 계획 조회
-    diet_plan = db_get_diet_plan(
-        diet_type="균형 잡힌 식단",
-        user_gender=user_info.get("gender", "남성")
-    )
-    if diet_plan:
-        return diet_plan
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return {"plan": "균형 잡힌 식단"}
+    return get_diet_plan(diet_type, user_gender)
 
 @tool
-async def get_user_preferences_db(user_id: int) -> Dict[str, Any]:
-    """사용자의 식품 선호도를 조회합니다."""
-    # 데이터베이스에서 사용자 선호도 조회
-    user_preferences = db_get_user_preferences_db(user_id)
-    if user_preferences:
-        return user_preferences
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return {"preferred_ingredients": ["계란", "현미"]}
+async def get_user_preferences_tool(user_id: int) -> Dict[str, Any]:
+    """사용자 선호도를 조회합니다."""
+    return get_user_preferences_db(user_id)
 
 @tool
-async def recommend_foods(user_id: int) -> Dict[str, Any]:
-    """사용자의 식사 기록을 분석하여 식품을 추천합니다."""
-    # 데이터베이스에서 식품 추천 조회
-    food_recommendations = db_recommend_foods(user_id)
-    if food_recommendations:
-        return food_recommendations
-    # 데이터베이스에서 정보를 가져오지 못한 경우 기본값 반환
-    return {
-        "recommended_foods": [
-            {"type": "protein", "foods": [{"name": "계란", "calories": 70, "protein": 6, "carbs": 0, "fat": 5, "portion": 1, "unit": "개"}]},
-            {"type": "carbs", "foods": [{"name": "현미", "calories": 216, "protein": 5, "carbs": 45, "fat": 1.8, "portion": 100, "unit": "g"}]}
-        ]
-    }
+async def recommend_foods_tool(user_id: int, deficient_nutrients: List[str]) -> List[Dict[str, Any]]:
+    """영양소 기반 음식을 추천합니다."""
+    return recommend_foods(user_id, deficient_nutrients)
 
 class FoodSearchTool(Tool):
     name = "FoodSearchTool"
