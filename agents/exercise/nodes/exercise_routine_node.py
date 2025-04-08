@@ -3,7 +3,7 @@ from ..prompts.exercise_routine_prompts import EXERCISE_ROUTINE_PROMPT_2
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.tools import Tool, StructuredTool
-from ..tools.exercise_routine_tools import web_search, get_user_goal, get_user_physical_info, get_user_exercise_record, master_select_db, get_table_schema
+from ..tools.exercise_routine_tools import web_search, get_user_goal, get_user_physical_info, get_user_exercise_record, master_select_db, get_all_table_schema
 from ..models.input_models import GetUserInfoInput, MasterSelectInput
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
@@ -40,9 +40,10 @@ tools = [
         description="웹 검색을 통해 운동 루틴 정보를 찾습니다."
     ),
     Tool.from_function(
-        func=get_table_schema,
-        name="get_table_schema",
-        description="사용 가능한 테이블과 컬럼 정보를 조회합니다."
+        func=get_all_table_schema,
+        name="get_all_table_schema",
+        description="사용 가능한 테이블과 컬럼 정보를 조회합니다.",
+        return_direct=True
     ),
     StructuredTool.from_function(
         func=master_select_db,

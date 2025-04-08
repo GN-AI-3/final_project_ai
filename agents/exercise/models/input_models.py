@@ -12,3 +12,6 @@ class MasterSelectInput(BaseModel):
 class MasterSelectMultiInput(BaseModel):
     table_name: str
     conditions: Dict[str, str]
+
+class EmptyArgs(BaseModel):
+    pass

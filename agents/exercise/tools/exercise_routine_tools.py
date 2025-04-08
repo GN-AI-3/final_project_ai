@@ -19,9 +19,18 @@ DB_CONFIG = {
 }
 
 TABLE_SCHEMA = {
-    "exercise_record": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
-    "exercise": ["id", "name", "exercise_type"],
-    "member": ["id", "name", "email", "phone", "profile_image", "goal"]
+    "exercise_record": {
+        "columns": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
+        "description": "회원의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다. exercise_id는 exercise 테이블의 id와 연결해 운동 이름(name)을 조회해야 합니다."
+    },
+    "exercise": {
+        "columns": ["id", "name", "exercise_type"],
+        "description": "운동 목록. name은 운동명이며, exercise_type은 카테고리입니다 (예: 유산소 등)."
+    },
+    "member": {
+        "columns": ["id", "name", "email", "phone", "profile_image", "goal"],
+        "description": "회원 정보. goal은 사용자의 운동 목표입니다 (예: 벌크업, 체중 감량)."
+    }
 }
 
 @tool
@@ -92,14 +101,14 @@ def get_user_exercise_record(user_id: str) -> str:
     except Exception as e:
         return f"Database error: {str(e)}"
 
-@tool
-def get_table_schema() -> str:
+def get_all_table_schema() -> str:
     """PostgreSQL - 사용 가능한 테이블과 컬럼 정보를 반환"""
     schema_info = []
-    for table_name, columns in TABLE_SCHEMA.items():
+    for table_name, table_info in TABLE_SCHEMA.items():
         schema_info.append(f"테이블: {table_name}")
-        schema_info.append(f"컬럼: {', '.join(columns)}")
-        schema_info.append("")
+        schema_info.append(f"컬럼: {', '.join(table_info['columns'])}")
+        schema_info.append(f"설명: {table_info['description']}")
+        schema_info.append("--------------------------------")
     return "\n".join(schema_info)
 
 def master_select_db(table_name: str, column_name: str, value: str) -> str:
@@ -120,7 +129,7 @@ def master_select_db(table_name: str, column_name: str, value: str) -> str:
         print("table_name: ", table_name)
         return "Invalid table name"
     
-    if column_name not in TABLE_SCHEMA[table_name]:
+    if column_name not in TABLE_SCHEMA[table_name]["columns"]:
         print("column_name: ", column_name)
         return "Invalid column name"
     
@@ -129,6 +138,7 @@ def master_select_db(table_name: str, column_name: str, value: str) -> str:
             sql.Identifier(table_name),
             sql.Identifier(column_name)
         )
+
         params = (value,)
 
         conn = psycopg2.connect(**DB_CONFIG)
@@ -163,7 +173,7 @@ def master_select_db_multi(
         return "Invalid table name"
     
     for col in conditions.keys():
-        if col not in TABLE_SCHEMA[table_name]:
+        if col not in TABLE_SCHEMA[table_name]["columns"]:
             return f"Invalid column name: {col}"
 
     try:
