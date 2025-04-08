@@ -1,5 +1,5 @@
 from ..models.state_models import RoutingState
-from ..prompts.system_prompts import EXERCISE_TYPE_PROMPT
+from ..prompts.exercise_routing_prompts import EXERCISE_TYPE_PROMPT
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 

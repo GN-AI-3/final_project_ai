@@ -36,9 +36,9 @@ class Supervisor:
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": """다음 카테고리 중 하나로 메시지를 분류해주세요:
-                    - exercise: 운동, 운동 방법, 운동 효과 등
+                    - schedule: PT 일정 조회, 등록, 수정, 취소
+                    - exercise: PT 일정을 제외한 운동 관련
                     - food: 식단, 영양, 음식 등
-                    - schedule: PT 일정 등록, 수정, 취소 등
                     - motivation: 감정적 어려움, 동기부여가 필요한 내용, 우울함, 좌절, 불안 등
                     - general: 위 카테고리에 속하지 않는 일반적인 대화
                     
