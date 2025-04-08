@@ -8,3 +8,5 @@ class ScheduleAgent(BaseAgent):
         chain = prompt | self.model
         response = await chain.ainvoke({"message": message})
         return {"type": "schedule", "response": response.content}
+    
+    

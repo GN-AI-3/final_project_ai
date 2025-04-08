@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph
 from langchain_openai import ChatOpenAI
-from .nodes import (
+from agents.food.nodes import (
     UserState,
     nutrition_calculation_node,
     meal_planning_node,
@@ -11,6 +11,11 @@ from .nodes import (
     nutrition_analysis_node,
     recommend_supplements_node
 )
+from typing import Dict, Any, List, Optional
+from langchain.graphs import END
+from agents.food.common.state import AgentState
+from agents.food.subagents.meal_input_agent.agent import MealInputAgent
+from agents.food.subagents.nutrient_agent.agent import NutrientAgent
  
 import os
 from dotenv import load_dotenv
@@ -78,6 +83,7 @@ def create_workflow():
     workflow.set_entry_point("vector_search")
     
     return workflow.compile()
+
 def run_workflow(initial_state: UserState):
     """
     워크플로우 실행 및 결과 출력
@@ -133,3 +139,39 @@ def run_workflow(initial_state: UserState):
         print("추천 식단 정보가 없습니다.")
     
     return result
+
+class MealNutrientWorkflow:
+    """식사 입력 및 영양소 분석 워크플로우"""
+    
+    def __init__(self, meal_input_agent: MealInputAgent, nutrient_agent: NutrientAgent):
+        """워크플로우 초기화"""
+        self.meal_input_agent = meal_input_agent
+        self.nutrient_agent = nutrient_agent
+        self.workflow = self._create_workflow()
+    
+    def _create_workflow(self) -> StateGraph:
+        """워크플로우 생성"""
+        workflow = StateGraph(AgentState)
+        
+        # 노드 추가
+        workflow.add_node("process_meal_input", self.meal_input_agent.process)
+        workflow.add_node("analyze_nutrition", self.nutrient_agent.process)
+        
+        # 엣지 추가
+        workflow.add_edge("process_meal_input", "analyze_nutrition")
+        workflow.add_edge("analyze_nutrition", END)
+        
+        # 진입점 설정
+        workflow.set_entry_point("process_meal_input")
+        
+        return workflow.compile()
+    
+    async def run(self, state: AgentState) -> AgentState:
+        """워크플로우 실행"""
+        try:
+            # 워크플로우 실행
+            final_state = await self.workflow.ainvoke(state)
+            return final_state
+        except Exception as e:
+            state.error = str(e)
+            return state

@@ -50,7 +50,7 @@ class AgentState(TypedDict):
 class MealInputAgent:
     """식사 입력 에이전트"""
     
-    DEFAULT_MODEL = "gpt-4-turbo-preview"
+    DEFAULT_MODEL = "gpt-4o-mini"
     DEFAULT_PORTION_SIZE = 100  # 기본 1인분 크기 (그램)
     
     def __init__(self, model_name: str = DEFAULT_MODEL):
