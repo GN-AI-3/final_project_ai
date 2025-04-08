@@ -9,17 +9,21 @@ import traceback
 from datetime import datetime
 
 # 에이전트 임포트
-from agents import ExerciseMotivationAgent
-from agents.exercise_motivation.workflows.exercise_motivation_workflow import create_exercise_motivation_workflow
+from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
+from supervisor import Supervisor
+from langchain_openai import ChatOpenAI
 
-# 기본 에이전트 인스턴스 생성
-motivation_agent = ExerciseMotivationAgent()
-motivation_workflow = create_exercise_motivation_workflow()
+# Supervisor 초기화
+llm = ChatOpenAI(
+    temperature=0.7,
+    model=os.getenv("OPENAI_MODEL_NAME", "gpt-3.5-turbo")
+)
+supervisor = Supervisor(model=llm)
 
 # FastAPI 앱 초기화
 app = FastAPI(
-    title="Exercise Motivation AI Server",
-    description="사용자의 운동 패턴을 분석하고 개인화된 동기부여 메시지를 생성하는 API 서버",
+    title="AI 피트니스 코치 API 서버",
+    description="사용자의 운동, 식단, 일정 등에 관련된 질문을 처리하고 개인화된 답변을 제공하는 API 서버",
     version="1.0.0"
 )
 
@@ -45,84 +49,57 @@ logger = logging.getLogger(__name__)
 
 # 모델 정의
 class ChatRequest(BaseModel):
-    member_id: str
     message: str
+    email: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
-    type: str = "motivation"
+    type: str
     created_at: str = None
 
 # 백그라운드 작업: 메시지 스케줄링
-def schedule_motivation_message(member_id: int, message: str):
+def schedule_motivation_message(email: str, message: str):
     try:
-        motivation_agent.schedule_motivation_message(member_id)
-        logger.info(f"사용자 {member_id} 메시지 스케줄링 완료")
+        # 기본 사용자 ID 사용 (향후 사용자 이메일로 조회 가능)
+        member_id = 1
+        logger.info(f"사용자 {email} 메시지 스케줄링 완료")
     except Exception as e:
         logger.error(f"메시지 스케줄링 중 오류 발생: {str(e)}")
 
 # 루트 엔드포인트
 @app.get("/")
 async def root():
-    return {"message": "Exercise Motivation AI API Server"}
+    return {"message": "AI 피트니스 코치 API 서버에 오신 것을 환영합니다"}
 
 # 채팅 엔드포인트
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
-    logger.info(f"채팅 요청 받음 - 회원 ID: {request.member_id}, 메시지: {request.message[:50]}...")
+    # 이메일 정보가 있으면 사용, 없으면 기본값 사용
+    user_email = request.email or "anonymous@example.com"
+    logger.info(f"채팅 요청 받음 - 사용자: {user_email}, 메시지: {request.message[:50]}...")
     
     try:
-        # 사용자 ID를 정수로 변환
-        try:
-            member_id = int(request.member_id)
-        except ValueError:
-            logger.warning(f"유효하지 않은 회원 ID 형식: {request.member_id}")
-            raise HTTPException(status_code=400, detail="유효하지 않은 회원 ID 형식입니다")
+        # 기본 사용자 ID 사용 (향후 사용자 이메일로 조회 가능)
+        member_id = 1
         
-        # 스케줄링 명령어 감지
-        if "스케줄" in request.message or "예약" in request.message or "schedule" in request.message.lower():
-            logger.info(f"스케줄링 명령어 감지 - 회원 ID: {member_id}")
-            background_tasks.add_task(schedule_motivation_message, member_id, request.message)
-            return ChatResponse(
-                response="동기부여 메시지가 성공적으로 예약되었습니다. 지정된 시간에 메시지를 받게 됩니다.",
-                type="motivation_schedule",
-                created_at=datetime.now().isoformat()
-            )
+        # Supervisor를 통한 메시지 분석 및 처리
+        response_data = await supervisor.process(request.message, member_id=member_id)
         
-        # 일반 동기부여 메시지 생성
-        response = motivation_agent.generate_motivation_message(member_id, request.message)
-        logger.info(f"동기부여 메시지 생성 완료 - 회원 ID: {member_id}, 응답 길이: {len(response)}")
+        # 타입과 응답 추출
+        response_type = response_data.get("type", "general")
+        response_message = response_data.get("response", "죄송합니다. 요청을 처리할 수 없습니다.")
+        
+        # 스케줄링 명령어는 background_tasks로 처리
+        if "schedule" in request.message.lower() or "예약" in request.message:
+            if response_type == "motivation" or response_type == "exercise":
+                background_tasks.add_task(schedule_motivation_message, user_email, request.message)
+                logger.info(f"스케줄링 명령어 감지 - 사용자: {user_email}")
+        
+        logger.info(f"{response_type.upper()} 타입 응답 생성 완료 - 사용자: {user_email}, 응답 길이: {len(response_message)}")
         
         return ChatResponse(
-            response=response,
-            type="motivation",
-            created_at=datetime.now().isoformat()
-        )
-        
-    except Exception as e:
-        logger.error(f"요청 처리 중 오류 발생: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail="메시지 처리 중 오류가 발생했습니다")
-
-# 워크플로우 기반 동기부여 메시지 생성 엔드포인트
-@app.post("/motivation", response_model=ChatResponse)
-async def generate_motivation(request: ChatRequest, background_tasks: BackgroundTasks):
-    logger.info(f"동기부여 메시지 생성 요청 - 회원 ID: {request.member_id}")
-    
-    try:
-        # 사용자 ID를 정수로 변환
-        try:
-            member_id = int(request.member_id)
-        except ValueError:
-            logger.warning(f"유효하지 않은 회원 ID 형식: {request.member_id}")
-            raise HTTPException(status_code=400, detail="유효하지 않은 회원 ID 형식입니다")
-        
-        # 워크플로우 기반 동기부여 메시지 생성
-        response = motivation_workflow(member_id)
-        logger.info(f"워크플로우 기반 동기부여 메시지 생성 완료 - 회원 ID: {member_id}, 응답 길이: {len(response)}")
-        
-        return ChatResponse(
-            response=response,
-            type="workflow_motivation",
+            response=response_message,
+            type=response_type,
             created_at=datetime.now().isoformat()
         )
         
