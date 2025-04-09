@@ -12,6 +12,8 @@ from utils.schedule_validator import (
     check_existing_schedule
 )
 
+pt_contract_id = 7
+
 @tool
 def get_user_schedule(input: str = "") -> str:
     """사용자의 스케줄을 조회합니다.
@@ -23,7 +25,6 @@ def get_user_schedule(input: str = "") -> str:
         str: 스케줄 목록 또는 에러 메시지
     """
     try:
-        pt_contract_id = 7
         
         query = f"""
         SELECT start_time, reservation_id
@@ -128,7 +129,7 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         # 4. 예약 추가
         query = f"""
         INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-        VALUES ('{start_dt}', '{end_dt}', 5, 'SCHEDULED')
+        VALUES ('{start_dt}', '{end_dt}', {pt_contract_id}, 'SCHEDULED')
         RETURNING reservation_id;
         """
         
@@ -184,9 +185,6 @@ def modify_schedule(
         str: 작업 결과 메시지
     """
     try:
-        # pt_contract_id 설정 (실제로는 사용자 인증에서 가져와야 함)
-        pt_contract_id = 7  # 테스트용 고정값
-        
         # 예약 번호 확인
         check_query = f"""
         SELECT start_time, end_time, status
