@@ -12,6 +12,11 @@ from datetime import datetime
 from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
 from supervisor import Supervisor
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage
+from chat_history_manager import ChatHistoryManager
+
+# Redis 대화 내역 관리자 초기화
+chat_history_manager = ChatHistoryManager()
 
 # Supervisor 초기화
 llm = ChatOpenAI(
@@ -74,7 +79,7 @@ async def root():
 # 채팅 엔드포인트
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
-    # 이메일 정보가 있으면 사용, 없으면 기본값 사용
+    # 이메일 정보가 요청에서 제공되면 사용, 없으면 기본값 사용
     user_email = request.email or "anonymous@example.com"
     logger.info(f"채팅 요청 받음 - 사용자: {user_email}, 메시지: {request.message[:50]}...")
     
@@ -82,12 +87,18 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         # 기본 사용자 ID 사용 (향후 사용자 이메일로 조회 가능)
         member_id = 1
         
+        # 사용자 메시지 저장
+        chat_history_manager.add_user_message(user_email, request.message)
+        
         # Supervisor를 통한 메시지 분석 및 처리
         response_data = await supervisor.process(request.message, member_id=member_id)
         
         # 타입과 응답 추출
         response_type = response_data.get("type", "general")
         response_message = response_data.get("response", "죄송합니다. 요청을 처리할 수 없습니다.")
+        
+        # AI 응답 저장
+        chat_history_manager.add_ai_message(user_email, response_message)
         
         # 스케줄링 명령어는 background_tasks로 처리
         if "schedule" in request.message.lower() or "예약" in request.message:
@@ -115,6 +126,45 @@ async def status():
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0"
     }
+
+# 대화 내역 조회 엔드포인트 추가
+@app.get("/chat/history")
+async def get_chat_history(email: str = None, limit: int = 20):
+    try:
+        user_id = email or "anonymous@example.com"
+        messages = chat_history_manager.get_recent_messages(user_id, limit)
+        
+        # 메시지 포맷팅
+        formatted_messages = [
+            {
+                "role": "user" if isinstance(msg, HumanMessage) else "assistant",
+                "content": msg.content,
+                "created_at": msg.additional_kwargs.get("created_at", datetime.now().isoformat())
+            }
+            for msg in messages
+        ]
+        
+        return {"messages": formatted_messages}
+        
+    except Exception as e:
+        logger.error(f"대화 내역 조회 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail="대화 내역 조회 중 오류가 발생했습니다")
+
+# 대화 내역 삭제 엔드포인트 추가
+@app.delete("/chat/history")
+async def clear_chat_history(email: str = None):
+    try:
+        user_id = email or "anonymous@example.com"
+        success = chat_history_manager.clear_history(user_id)
+        
+        if success:
+            return {"message": "대화 내역이 성공적으로 삭제되었습니다."}
+        else:
+            raise HTTPException(status_code=500, detail="대화 내역 삭제 중 오류가 발생했습니다")
+            
+    except Exception as e:
+        logger.error(f"대화 내역 삭제 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail="대화 내역 삭제 중 오류가 발생했습니다")
 
 if __name__ == "__main__":
     # 환경 변수에서 포트 설정 가져오기 (기본값: 8000)
