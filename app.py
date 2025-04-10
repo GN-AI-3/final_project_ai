@@ -25,6 +25,13 @@ llm = ChatOpenAI(
 )
 supervisor = Supervisor(model=llm)
 
+# 에이전트 등록
+supervisor.register_agent("exercise", ExerciseAgent(llm))
+supervisor.register_agent("food", FoodAgent(llm))
+supervisor.register_agent("schedule", ScheduleAgent(llm))
+supervisor.register_agent("motivation", MotivationAgent(llm))
+supervisor.register_agent("general", GeneralAgent(llm))
+
 # FastAPI 앱 초기화
 app = FastAPI(
     title="AI 피트니스 코치 API 서버",
