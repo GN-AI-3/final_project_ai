@@ -74,12 +74,13 @@ class Supervisor:
             # 오류 발생 시 일반 카테고리로 처리
             return "general"
     
-    async def process(self, message: str) -> Dict[str, Any]:
+    async def process(self, message: str, member_id: int = None) -> Dict[str, Any]:
         try:
             # 감정 단어를 포함하는 메시지는 우선 동기부여 에이전트로 처리
             emotional_keywords = ["힘들", "슬프", "우울", "불안", "좌절", "스트레스", "자신감", "의욕", "무기력"]
             if any(keyword in message.lower() for keyword in emotional_keywords):
                 try:
+                    # member_id 키워드 인자 없이 호출
                     return await self.agents["motivation"].process(message)
                 except Exception as e:
                     print(f"동기부여 에이전트 오류: {str(e)}")
@@ -90,12 +91,14 @@ class Supervisor:
             agent = self.agents.get(category, self.agents["general"])
             
             try:
+                # member_id 키워드 인자 없이 호출
                 return await agent.process(message)
             except Exception as e:
                 print(f"에이전트 처리 오류 ({category}): {str(e)}")
                 traceback.print_exc()
                 # 오류 발생 시 일반 에이전트로 대체
                 if category != "general":
+                    # member_id 키워드 인자 없이 호출
                     return await self.agents["general"].process(message)
                 else:
                     return {
