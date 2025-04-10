@@ -4,6 +4,7 @@ from langchain.prompts import ChatPromptTemplate
 from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
 import os
 import openai
+import traceback
 import logging
 from chat_history_manager import ChatHistoryManager
 
@@ -199,8 +200,8 @@ class Supervisor:
                 
                 return response_data
             except Exception as e:
-                logger.error(f"에이전트 처리 오류 ({category}): {str(e)}")
-                
+                print(f"에이전트 처리 오류 ({category}): {str(e)}")
+                traceback.print_exc()
                 # 오류 발생 시 일반 에이전트로 대체
                 if category != "general":
                     try:

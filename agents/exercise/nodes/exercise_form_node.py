@@ -2,8 +2,8 @@ from ..models.state_models import RoutingState
 from ..prompts.exercise_form_prompts import EXERCISE_FORM_PROMPT, CONFIRM_EXERCISE_FORM_PROMPT
 from langchain_openai import ChatOpenAI
 from langchain.tools import Tool, StructuredTool
-from ..tools.exercise_form_tools import web_search, get_user_info, get_exercise_info
-from ..tools.exercise_routine_tools import master_select_db, get_all_table_schema, master_select_db_multi
+from ..tools.exercise_form_tools import web_search
+from ..tools.exercise_routine_tools import get_all_table_schema, master_select_db_multi
 from dotenv import load_dotenv
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
@@ -52,7 +52,7 @@ def exercise_form_agent(state: RoutingState, llm: ChatOpenAI):
 
     response = agent_executor.invoke({
         "message": state.message,
-        "member_id": 1 # user_id
+        "member_id": 3 # user_id
     })
     print("exercise form response: ", response["output"])
     state.message = response["output"]
