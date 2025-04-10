@@ -28,11 +28,11 @@ class DBConnectionTool:
         """
         try:
             # 환경 변수에서 DB 연결 정보 가져오기
-            db_host = os.getenv("POSTGRES_HOST")
-            db_port = os.getenv("POSTGRES_PORT")
-            db_name = os.getenv("POSTGRES_DB")
-            db_user = os.getenv("POSTGRES_USER")
-            db_password = os.getenv("POSTGRES_PASSWORD")
+            db_host = os.getenv("DB_HOST")
+            db_port = os.getenv("DB_PORT")
+            db_name = os.getenv("DB_NAME")
+            db_user = os.getenv("DB_USER")
+            db_password = os.getenv("DB_PASSWORD")
             
             # 환경 변수가 없는 경우 로그 출력
             if not all([db_host, db_port, db_name, db_user, db_password]):
