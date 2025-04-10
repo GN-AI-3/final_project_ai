@@ -60,5 +60,5 @@ def routing(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     })
 
     print("routing response: ", response["output"])
-    state.category = response["output"]
+    state.plan = response["output"]
     return state

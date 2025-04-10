@@ -4,6 +4,7 @@ from langchain.prompts import ChatPromptTemplate
 from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
 import os
 import openai
+import traceback
 
 class Supervisor:
     def __init__(self, model: ChatOpenAI):
@@ -94,6 +95,7 @@ class Supervisor:
                 return await agent.process(message)
             except Exception as e:
                 print(f"에이전트 처리 오류 ({category}): {str(e)}")
+                traceback.print_exc()
                 # 오류 발생 시 일반 에이전트로 대체
                 if category != "general":
                     # member_id 키워드 인자 없이 호출
