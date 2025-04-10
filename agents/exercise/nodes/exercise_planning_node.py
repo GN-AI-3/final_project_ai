@@ -7,7 +7,7 @@ from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from ..models.state_models import RoutingState
 from langchain.tools import Tool
 from ..tools.exercise_routine_tools import master_select_db_multi, web_search
-from ..prompts.exercise_planning_prompts import EXERCISE_PLANNING_PROMPT, EXERCISE_PLANNING_PROMPT_2, EXERCISE_PLANNING_PROMPT_3
+from ..prompts.exercise_planning_prompts import EXERCISE_PLANNING_PROMPT, EXERCISE_PLANNING_PROMPT_2, EXERCISE_PLANNING_PROMPT_3, EXERCISE_PLANNING_PROMPT_4
 import json
 
 TABLE_SCHEMA = {
@@ -39,7 +39,7 @@ TOOL_DESCRIPTIONS = [
     },
     {
         "name": "master_select_db_multi",
-        "description": "PostgreSQL 데이터베이스에서 특정 테이블의 여러 조건(column=value) 기반으로 데이터를 조회한다. 반드시 TABLE_SCHEMA에 정의된 테이블과 컬럼만 사용 가능하다. 값으로는 이중 쿼리문이 와도 된다.",
+        "description": "PostgreSQL 데이터베이스에서 특정 테이블의 여러 조건(column=value) 기반으로 데이터를 조회한다. 반드시 TABLE_SCHEMA에 정의된 테이블과 컬럼만 사용 가능하다.",
         "input_format": {
             "table_name": "조회할 테이블 이름 (예: 'exercise_record')",
             "conditions": {
@@ -58,7 +58,7 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     member_id = 3
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", EXERCISE_PLANNING_PROMPT_3),
+        ("system", EXERCISE_PLANNING_PROMPT_4),
         ("user", "{message}"),
         ("user", "{member_id}"),
         ("user", "{table_schema}"),
