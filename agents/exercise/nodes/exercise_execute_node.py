@@ -76,9 +76,9 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
 
         if not tool_name:
             llm_input = "\n".join([
-                f"🗣 사용자 질문: {message}",
-                f"📚 지금까지 수집된 정보:\n{json.dumps(context, ensure_ascii=False, indent=2)}",
-                f"🎯 현재 단계 목적:\n{description}"
+                f"사용자 질문: {message}",
+                f"지금까지 수집된 정보:\n{json.dumps(context, ensure_ascii=False, indent=2)}",
+                f"현재 단계 목적:\n{description}"
             ])
             llm_response = llm.invoke([HumanMessage(content=llm_input)])
             result = llm_response.content
@@ -110,5 +110,14 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         context.append(parsed)
 
     state.context = context
-    state.result = results[-1]["result"] if results else "No result"
+
+    final_llm_input = "\n".join([
+        f"사용자 질문: {message}",
+        f"지금까지 수집된 정보:\n{json.dumps(context, ensure_ascii=False, indent=2)}",
+        f"최종 목적: 위 정보를 바탕으로 최종 결과를 요약하고 사용자가 이해하기 쉽게 정리해주세요. 단, 질문과 무관한 정보는 제외해야 합니다."
+    ])
+    final_response = llm.invoke([HumanMessage(content=final_llm_input)])
+    final_result = final_response.content
+
+    state.result = final_result
     return state

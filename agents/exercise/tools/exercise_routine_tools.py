@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from psycopg2 import sql
 import json
 from ..models.input_models import MasterSelectInput
+from elasticsearch import Elasticsearch
+
+es = Elasticsearch("http://elasticsearch:9200")
 
 load_dotenv()
 
@@ -33,7 +36,6 @@ TABLE_SCHEMA = {
     }
 }
 
-@tool
 def web_search(query: str) -> str:
     """웹 검색 운동 루틴 추천"""
     tavily_client = TavilyClient(
@@ -199,3 +201,23 @@ def master_select_db_multi(
         return json.dumps(result, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"error": f"Database error: {str(e)}"})
+    
+def index_exercise(exercise_id: int, name: str):
+    doc = {
+        "exercise_id": exercise_id,
+        "name": name,
+    }
+    es.index(index="exercises", id=exercise_id, document=doc)
+
+def search_exercise(query: str, size: int = 5):
+    body = {
+        "query": {
+            "multi_match": {
+                "query": query,
+                "fields": ["name^2", "description"],
+                "fuzziness": "auto"
+            }
+        }
+    }
+    res = es.search(index="exercises", body=body, size=size)
+    return [hit["_source"] for hit in res["hits"]["hits"]]
