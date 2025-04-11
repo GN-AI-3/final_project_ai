@@ -172,17 +172,37 @@ class ChatHistoryManager:
     def _add_message(self, email: str, role: str, message: str) -> None:
         """Add a message to the user's chat history"""
         try:
+            # 안전한 메시지 처리 (인코딩 문제 방지)
+            safe_message = message
+            if not isinstance(safe_message, str):
+                try:
+                    safe_message = str(safe_message)
+                except Exception as e:
+                    logger.error(f"[메시지 문자열 변환 오류] {str(e)}")
+                    safe_message = "메시지 변환 오류"
+            
+            # 인코딩 문제 방지를 위한 처리
+            try:
+                safe_message = safe_message.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+            except Exception as e:
+                logger.error(f"[메시지 인코딩 처리 오류] {str(e)}")
+                # 최대한 복구 시도
+                try:
+                    safe_message = str(safe_message).encode('ascii', errors='replace').decode('ascii', errors='replace')
+                except:
+                    safe_message = "인코딩 오류 메시지"
+            
             # 메시지 데이터 생성
             message_data = {
                 "role": role,
-                "content": message,
+                "content": safe_message,
                 "timestamp": datetime.now().isoformat()
             }
             
             if self.use_redis and self.redis_client:
                 # Redis 저장
                 user_key = self._get_user_key(email)
-                json_data = json.dumps(message_data)
+                json_data = json.dumps(message_data, ensure_ascii=False)
                 
                 # 메시지 저장
                 result = self.redis_client.lpush(user_key, json_data)
@@ -235,36 +255,85 @@ class ChatHistoryManager:
                 # 메시지 파싱 및 정렬 (오래된 순)
                 for msg_json in reversed(raw_messages):
                     try:
+                        # 인코딩 문제 방지
+                        if isinstance(msg_json, bytes):
+                            msg_json = msg_json.decode('utf-8', errors='replace')
+                            
                         msg_data = json.loads(msg_json)
+                        
+                        # 컨텐츠 인코딩 문제 추가 검사
+                        if "content" in msg_data and isinstance(msg_data["content"], str):
+                            try:
+                                msg_data["content"] = msg_data["content"].encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                            except Exception as e:
+                                logger.warning(f"메시지 내용 인코딩 처리 중 오류: {str(e)}")
+                                # 손상된 내용 복구 시도
+                                msg_data["content"] = str(msg_data["content"]).encode('ascii', errors='replace').decode('ascii', errors='replace')
+                                
                         messages.append(msg_data)
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
                         logger.error(f"[JSON 파싱 오류] 메시지: {msg_json[:100]}...")
+                        logger.error(f"JSON 파싱 오류 상세: {str(e)}")
                 
                 logger.info(f"[Redis 조회 완료] 이메일: {email}, 조회된 메시지 수: {len(messages)}")
             else:
-                # 메모리에서 조회
+                # 메모리 저장소에서 조회
                 if email in self.in_memory_storage:
-                    # 메시지는 최신 순으로 저장되어 있으므로 시간순으로 정렬
-                    messages = list(reversed(self.in_memory_storage[email][:limit]))
+                    # 메모리 저장소에서는 이미 최신 순으로 저장되어 있음
+                    raw_messages = self.in_memory_storage[email][:limit]
+                    
+                    # 메시지 정렬 (오래된 순)
+                    for msg_data in reversed(raw_messages):
+                        # 컨텐츠 인코딩 문제 추가 검사
+                        if "content" in msg_data and isinstance(msg_data["content"], str):
+                            try:
+                                msg_data["content"] = msg_data["content"].encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                            except Exception as e:
+                                logger.warning(f"메시지 내용 인코딩 처리 중 오류: {str(e)}")
+                                # 손상된 내용 복구 시도
+                                msg_data["content"] = str(msg_data["content"]).encode('ascii', errors='replace').decode('ascii', errors='replace')
+                        
+                        messages.append(msg_data)
+                    
                     logger.info(f"[메모리 조회 완료] 이메일: {email}, 조회된 메시지 수: {len(messages)}")
                 else:
-                    logger.info(f"[메모리 조회] 이메일: {email} 기록 없음")
+                    logger.info(f"[메모리 조회] 이메일: {email}에 대한 대화 내역 없음")
             
-            # 결과 로깅
-            if messages:
-                for i, msg in enumerate(messages[:3]):  # 처음 3개만 로깅
-                    logger.info(f"[메시지 {i+1}] 역할: {msg.get('role')}, 내용: {msg.get('content')[:50]}...")
+            # 최종 안전 검사 - 잘못된 형식의 메시지 필터링
+            safe_messages = []
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    logger.warning(f"잘못된 메시지 형식 스킵: {type(msg)}")
+                    continue
+                    
+                # 필수 필드 검사
+                if "role" not in msg or "content" not in msg:
+                    logger.warning(f"필수 필드 누락된 메시지 스킵: {msg.keys()}")
+                    continue
+                    
+                # content 필드 안전 처리
+                if not isinstance(msg["content"], str):
+                    try:
+                        msg["content"] = str(msg["content"])
+                    except:
+                        msg["content"] = "컨텐츠 변환 오류"
+                        
+                # role 필드 안전 처리
+                if not isinstance(msg["role"], str):
+                    try:
+                        msg["role"] = str(msg["role"])
+                    except:
+                        msg["role"] = "unknown"
                 
-                if len(messages) > 3:
-                    logger.info(f"[메시지] 외 {len(messages) - 3}개 더 있음")
+                safe_messages.append(msg)
+                
+            return safe_messages
             
-            return messages
-        
         except Exception as e:
             logger.error(f"[대화 내역 조회 오류] 이메일: {email}, 오류: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            return []
+            return []  # 오류 발생 시 빈 목록 반환
     
     def clear_history(self, email: str) -> bool:
         """Clear the chat history for a user"""

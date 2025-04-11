@@ -48,7 +48,12 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     message = state.message
 
     try:
-        plan = json.loads(state.plan)
+        plan_data = json.loads(state.plan)
+        # "step-by-step action plan" 키로 접근하는 경우 처리
+        if "step-by-step action plan" in plan_data:
+            plan = plan_data["step-by-step action plan"]
+        else:
+            plan = plan_data
     except Exception as e:
         raise ValueError(f"Invalid plan JSON: {e}")
 
@@ -61,6 +66,22 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     }
 
     for idx, step in enumerate(plan):
+        # step이 문자열인 경우 처리
+        if isinstance(step, str):
+            print(f"\n🔥 STEP {idx+1}: 텍스트 결과 처리")
+            print(f"📦 TOOL: 없음 (LLM 지식 사용)")
+            result = step
+            print("result: ", result)
+            
+            results.append({
+                "step": idx + 1,
+                "description": "텍스트 결과 처리",
+                "result": result
+            })
+            context.append(result)
+            continue
+            
+        # 일반적인 객체 처리
         tool_name = step.get("tool")
         raw_input_data = step.get("input", {})
         description = step.get("description", "")

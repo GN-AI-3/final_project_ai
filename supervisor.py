@@ -1,35 +1,57 @@
 """
 Supervisor 모듈
 에이전트 관리, 분류, 실행을 총괄하는 모듈입니다.
+다중 에이전트 병렬 처리를 지원합니다.
 """
 
-import asyncio
 import logging
 import traceback
 import time
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Union, Tuple, Set
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from chat_history_manager import ChatHistoryManager
+
+# LangGraph 파이프라인 임포트
+from supervisor.langgraph_pipeline import LangGraphPipeline
 
 logger = logging.getLogger(__name__)
 
 # 카테고리 분류를 위한 시스템 프롬프트
 CATEGORY_SYSTEM_PROMPT = """당신은 사용자의 메시지를 분석하고 적절한 카테고리로 분류하는 도우미입니다.
-사용자의 메시지를 다음 카테고리 중 하나로 분류해야 합니다:
+사용자의 메시지를 다음 카테고리 중 적합한 카테고리를 모두 찾아서 분류해야 합니다:
 
-1. exercise: 운동, 피트니스, 트레이닝, 근육, 스트레칭, 체력 등에 관련된 질문
-2. food: 음식, 식단, 영양, 요리, 식품, 건강식 등에 관련된 질문
-3. diet: 체중 감량, 다이어트, 칼로리 관리, 체중 조절 등에 관련된 질문
-4. schedule: 운동 루틴, 일정 관리, 스케줄링, 계획 등에 관련된 질문
-5. motivation: 동기 부여, 의지 강화, 습관 형성, 마음가짐 등에 관련된 질문
+1. exercise: 운동, 피트니스, 트레이닝, 근육, 스트레칭, 체력, 운동 루틴, 운동 계획, 운동 방법, 요일별 운동 추천, 운동 일정 계획, 운동 프로그램 등에 관련된 질문
+2. food: 음식, 식단, 영양, 요리, 식품, 건강식, 식이요법, 다이어트 식단, 영양소 등에 관련된 질문
+3. diet: 체중 감량, 체중 조절, 칼로리 관리, 체지방 감소, 체형 관리 목표 등에 관련된 질문
+4. schedule: PT 예약, 트레이닝 세션 일정, 코치 미팅 스케줄, 피트니스 클래스 등록, 헬스장 방문 일정 등 실제 일정 관리에 관련된 질문
+5. motivation: 동기 부여, 의지 강화, 습관 형성, 마음가짐, 목표 설정 등에 관련된 질문
 6. general: 위 카테고리에 명확하게 속하지 않지만 건강/피트니스와 관련된 일반 대화
 
-제공된 사용자 메시지를 분석하고 가장 적절한 카테고리만 선택하여 해당 카테고리 키워드만 응답하세요.
-예: "exercise", "food", "diet", "schedule", "motivation", "general"
+분류 시 주의사항:
+- 운동 루틴이나 운동 계획, 요일별 운동 추천, 주간 운동 계획 등은 모두 schedule이 아닌 exercise 카테고리로 분류하세요.
+- 요일별 식단이나 식단 계획은 food 카테고리로 분류하세요.
+- schedule 카테고리는 실제 PT 예약, 코치 미팅, 피트니스 클래스 참여와 같은 구체적인 일정 관리에만 사용하세요.
+- diet 카테고리는 체중 감량이나 체형 관리 목표에 관한 내용으로 제한하세요.
+- "이번주 월,수,금에 운동할건데 요일별로 운동 추천해줘"와 같은 질문은 exercise 카테고리입니다.
+- "이번주 월,수,금에 운동할건데 식단 추천해줘"와 같은 질문은 food 카테고리입니다.
+- "이번주 월,수,금에 운동할건데 요일별로 운동 추천이랑 식단 같이 짜줘"와 같은 질문은 exercise와 food 카테고리입니다.
 
-사용자 메시지가 여러 카테고리에 해당할 수 있으나, 가장 주된 의도와 연관된 하나의 카테고리만 선택하세요."""
+제공된 사용자 메시지를 분석하고 관련된 모든 카테고리를 JSON 배열 형식으로 반환하세요.
+예: ["exercise", "diet"], ["food"], ["motivation"]
+
+사용자 메시지가 여러 카테고리에 해당할 수 있으며, 최대 3개까지의 관련 카테고리를 반환하세요.
+동시에 여러 주제를 언급한 경우, 관련된 모든 카테고리를 포함해야 합니다.
+예를 들어, "운동과 식단 계획을 알려줘"는 ["exercise", "food"]과 같이 분류될 수 있습니다."""
+
+# 에이전트 프롬프트 템플릿 (대화 맥락 포함)
+AGENT_CONTEXT_PROMPT = """당신은 전문 AI 피트니스 코치입니다. 이전 대화 내용을 고려하여 사용자의 질문에 답변해 주세요.
+
+이전 대화 내역:
+{chat_history}
+
+사용자의 새 질문: {message}
+
+답변 시 이전 대화의 맥락을 고려하여 일관되고 개인화된 답변을 제공하세요."""
 
 # 에이전트 매니저 클래스
 class Supervisor:
@@ -44,14 +66,10 @@ class Supervisor:
         """
         self.agents = {}
         self.model = model
-        self.category_prompt = PromptTemplate(
-            input_variables=["message"],
-            template="{message}"
-        )
-        self.category_chain = LLMChain(
-            llm=self.model,
-            prompt=self.category_prompt
-        )
+        # 대화 내역 관리자 초기화
+        self.chat_history_manager = ChatHistoryManager()
+        # LangGraph 파이프라인 초기화
+        self.pipeline = LangGraphPipeline(agents=self.agents, llm=self.model)
         logger.info("Supervisor 초기화 완료")
     
     def register_agent(self, category: str, agent: Any) -> None:
@@ -63,69 +81,13 @@ class Supervisor:
             agent: 등록할 에이전트 객체
         """
         self.agents[category] = agent
+        # LangGraph 파이프라인에도 등록
+        self.pipeline.register_agent(category, agent)
         logger.info(f"카테고리 '{category}'에 에이전트 등록 완료")
-    
-    async def classify_message(self, message: str) -> str:
-        """
-        사용자 메시지를 분석하여 적절한 카테고리로 분류합니다.
-        
-        Args:
-            message: 분류할 사용자 메시지
-            
-        Returns:
-            str: 분류된 카테고리
-        """
-        try:
-            logger.info(f"메시지 분류 시작: {message[:50]}...")
-            
-            # 간단한 키워드 기반 분류기
-            keywords = {
-                "exercise": ["운동", "웨이트", "근육", "스트레칭", "헬스", "체력", "유산소", "근력", "다이어트"],
-                "food": ["식단", "음식", "식사", "영양", "단백질", "영양소", "먹다", "먹을", "섭취"],
-                "diet": ["다이어트", "식이요법", "체중", "감량", "칼로리", "체지방", "체중 감량", "식이 조절"],
-                "schedule": ["일정", "스케줄", "계획", "루틴", "시간표", "프로그램", "순서", "시간 관리"],
-                "motivation": ["동기", "의욕", "노력", "성취", "목표", "꾸준히", "습관", "결심"]
-            }
-            
-            # 간단한 의도 분류
-            for category, words in keywords.items():
-                for word in words:
-                    if word in message:
-                        logger.info(f"메시지 분류 결과 (키워드 기반): {category}")
-                        return category
-            
-            # 키워드 분석으로 분류되지 않는 경우 LLM 사용
-            if self.model:
-                # 시스템 메시지와 사용자 메시지 준비
-                messages = [
-                    SystemMessage(content=CATEGORY_SYSTEM_PROMPT),
-                    HumanMessage(content=message)
-                ]
-                
-                # LLM을 통한 카테고리 분류
-                response = await self.model.ainvoke(messages)
-                category = response.content.strip().lower()
-                
-                # 유효한 카테고리인지 확인
-                valid_categories = ["exercise", "food", "diet", "schedule", "motivation", "general"]
-                if category not in valid_categories:
-                    category = "general"  # 유효하지 않은 응답이면 general로 기본 설정
-                
-                logger.info(f"메시지 분류 결과 (LLM 기반): {category}")
-                return category
-            
-            # LLM 없이 키워드로도 분류되지 않으면 general 반환
-            logger.info("메시지 분류 결과: general (기본값)")
-            return "general"
-            
-        except Exception as e:
-            logger.error(f"메시지 분류 중 오류: {str(e)}")
-            logger.error(traceback.format_exc())
-            return "general"  # 오류 발생 시 기본값으로 general 반환
     
     async def process(self, message: str, email: str = None, **kwargs) -> Dict[str, Any]:
         """
-        사용자 메시지를 처리하고 적절한 에이전트로 라우팅합니다.
+        사용자 메시지를 처리하고 적절한 에이전트(들)로 라우팅합니다.
         
         Args:
             message: 처리할 사용자 메시지
@@ -135,92 +97,55 @@ class Supervisor:
             Dict[str, Any]: 처리 결과
         """
         start_time = time.time()
+        
         try:
-            logger.info(f"메시지 처리 시작 - 이메일: {email or '익명'}")
+            logger.info(f"메시지 처리 시작: {message[:50]}...")
             
-            # 1. 메시지 분류
-            category = await self.classify_message(message)
-            logger.info(f"메시지 분류 결과: {category}")
-            
-            # 2. 적절한 에이전트 선택
-            if category in self.agents:
-                agent = self.agents[category]
-                logger.info(f"선택된 에이전트: {category}")
-                
-                # 3. 에이전트에 메시지 전달 - 매개변수 최소화
+            # 대화 내역 가져오기
+            chat_history = None
+            if email:
                 try:
-                    # 에이전트가 email을 지원하는지 시도해보고 안되면 email 없이 호출
-                    if email is not None:
-                        result = await agent.process(message, email=email)
-                    else:
-                        result = await agent.process(message)
-                except TypeError as e:
-                    # email 매개변수를 지원하지 않는 경우
-                    logger.warning(f"{category} 에이전트 호출 중 TypeError: {str(e)}")
-                    logger.info(f"{category} 에이전트는 email 매개변수를 지원하지 않습니다. 기본 호출 사용")
-                    result = await agent.process(message)
-                
-                # 4. 결과 형식화 및 반환
-                if isinstance(result, dict):
-                    if "type" not in result:
-                        result["type"] = category
-                    if "execution_time" not in result:
-                        result["execution_time"] = time.time() - start_time
-                    logger.info(f"에이전트 처리 결과: 타입={result.get('type')}, 시간={result.get('execution_time'):.2f}초")
-                    return result
-                else:
-                    # 문자열이나 다른 형식으로 반환된 경우, 딕셔너리로 변환
-                    response = {
-                        "response": str(result),
-                        "type": category,
-                        "execution_time": time.time() - start_time
-                    }
-                    logger.info(f"에이전트 처리 결과(문자열): 타입={category}, 시간={response['execution_time']:.2f}초")
-                    return response
-            else:
-                # 등록된 에이전트가 없는 경우 일반 응답
-                logger.warning(f"카테고리 '{category}'에 대한 등록된 에이전트 없음, 일반 응답 사용")
-                return {
-                    "response": "죄송합니다. 현재 이 질문에 답변할 수 있는 에이전트가 없습니다.",
-                    "type": "general",
-                    "execution_time": time.time() - start_time
-                }
-                
+                    chat_history = await self.chat_history_manager.get_chat_history(email)
+                    logger.info(f"대화 내역 로드 완료 - 이메일: {email}, 항목 수: {len(chat_history) if chat_history else 0}")
+                except Exception as e:
+                    logger.error(f"대화 내역 로드 오류: {str(e)}")
+                    # 오류가 발생해도 계속 진행
+            
+            # LangGraph 파이프라인을 통한 메시지 처리
+            result = await self.pipeline.process(message, email=email, chat_history=chat_history)
+            
+            # 대화 내역 저장 (성공적인 경우에만)
+            if email and result.get("response"):
+                try:
+                    await self.chat_history_manager.add_chat_entry(
+                        email=email,
+                        user_message=message,
+                        ai_response=result["response"]
+                    )
+                    logger.info(f"대화 내역 업데이트 완료 - 이메일: {email}")
+                except Exception as e:
+                    logger.error(f"대화 내역 저장 오류: {str(e)}")
+            
+            # 처리 시간 추가
+            execution_time = time.time() - start_time
+            result["execution_time"] = execution_time
+            
+            logger.info(f"메시지 처리 완료 - 실행 시간: {execution_time:.2f}초")
+            return result
+            
         except Exception as e:
-            logger.error(f"메시지 처리 중 오류: {str(e)}")
+            execution_time = time.time() - start_time
+            error_msg = f"메시지 처리 중 오류: {str(e)}"
+            logger.error(error_msg)
             logger.error(traceback.format_exc())
             
-            # 에러 발생 시에도 유효한 응답 반환
             return {
-                "response": "죄송합니다. 메시지 처리 중 오류가 발생했습니다.",
+                "response": "죄송합니다. 요청을 처리하는 중에 문제가 발생했습니다.",
                 "type": "error",
                 "error": str(e),
-                "execution_time": time.time() - start_time
+                "execution_time": execution_time
             }
     
     def get_metrics(self) -> Dict[str, Any]:
-        """
-        Supervisor와 에이전트들의 성능 메트릭을 수집하여 반환합니다.
-        
-        Returns:
-            Dict[str, Any]: 수집된 메트릭
-        """
-        metrics = {
-            "agent_count": len(self.agents),
-            "registered_categories": list(self.agents.keys())
-        }
-        
-        # 각 에이전트별 메트릭 수집 (지원하는 경우)
-        agent_metrics = {}
-        for category, agent in self.agents.items():
-            if hasattr(agent, "get_metrics") and callable(agent.get_metrics):
-                try:
-                    agent_metrics[category] = agent.get_metrics()
-                except Exception as e:
-                    logger.error(f"{category} 에이전트 메트릭 수집 중 오류: {str(e)}")
-                    agent_metrics[category] = {"error": str(e)}
-            else:
-                agent_metrics[category] = {"metrics_supported": False}
-        
-        metrics["agent_metrics"] = agent_metrics
-        return metrics 
+        """메트릭 정보를 반환합니다."""
+        return self.pipeline.get_metrics() 

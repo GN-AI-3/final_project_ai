@@ -17,6 +17,11 @@ class GymGGunState(BaseModel):
     
     # 메시지 분류 결과
     classified_type: str = Field(default="general")
+    agent_messages: Dict[str, str] = Field(default_factory=dict)  # 각 에이전트별 메시지
+    all_categories: List[str] = Field(default_factory=list)  # 모든 관련 카테고리
+    
+    # 에이전트 결과
+    agent_results: List[Dict[str, Any]] = Field(default_factory=list)  # 여러 에이전트의 처리 결과
     
     # 처리 결과
     response: Optional[str] = Field(default=None)

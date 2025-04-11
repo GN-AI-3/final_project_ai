@@ -6,6 +6,7 @@
 import logging
 import traceback
 import time
+import asyncio
 from datetime import datetime
 from supervisor.langgraph.state import GymGGunState
 from chat_history_manager import ChatHistoryManager
@@ -26,25 +27,47 @@ def context_loader(state: GymGGunState) -> GymGGunState:
         # 메트릭에 컨텍스트 로드 시작 시간 설정
         state.metrics["context_load_start_time"] = start_time
         
-        # 채팅 기록 로드
-        chat_history = []
-        try:
-            chat_history_manager = ChatHistoryManager()
-            messages = chat_history_manager.get_recent_messages(email, limit=10)
-            chat_history = messages
-            logger.info(f"채팅 기록 로드 완료 - {len(messages)}개 메시지")
-            logger.debug(f"[CONTEXT_LOADER] 채팅 기록: {len(messages)}개 메시지 로드됨")
-            
-            # 메트릭에 채팅 기록 정보 추가
-            state.metrics["chat_history_count"] = len(messages)
-        except Exception as e:
-            logger.error(f"채팅 기록 로드 오류: {str(e)}")
-            # 오류 발생해도 계속 진행
-            state.metrics["chat_history_error"] = str(e)
-            logger.debug(f"[CONTEXT_LOADER] 채팅 기록 로드 실패: {str(e)}")
+        # state에 이미 chat_history가 있는지 확인
+        chat_history = state.get("chat_history")
         
-        # 메트릭에 채팅 기록 추가
-        state.metrics["chat_history"] = chat_history
+        # chat_history가 없는 경우에만 로드 시도
+        if not chat_history:
+            try:
+                chat_history_manager = ChatHistoryManager()
+                
+                # 비동기 함수 호출을 위한 이벤트 루프 확인 및 실행
+                try:
+                    # 이벤트 루프가 이미 실행 중인지 확인
+                    loop = asyncio.get_running_loop()
+                    logger.info("이벤트 루프가 이미 실행 중입니다. 동기적으로 처리합니다.")
+                    # 동기적으로 처리
+                    messages = chat_history_manager.get_recent_messages(email, limit=10)
+                except RuntimeError:
+                    # 이벤트 루프가 없으면 새로 만들어서 실행
+                    logger.info("새 이벤트 루프를 생성하여 비동기 처리합니다.")
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    messages = loop.run_until_complete(
+                        chat_history_manager.get_chat_history(email)
+                    )
+                    
+                chat_history = messages
+                # 대화 내역을 상태에 저장
+                state.set("chat_history", chat_history)
+                logger.info(f"채팅 기록 로드 완료 - {len(messages)}개 메시지")
+                logger.debug(f"[CONTEXT_LOADER] 채팅 기록: {len(messages)}개 메시지 로드됨")
+                
+                # 메트릭에 채팅 기록 정보 추가
+                state.metrics["chat_history_count"] = len(messages)
+            except Exception as e:
+                logger.error(f"채팅 기록 로드 오류: {str(e)}")
+                # 오류 발생해도 계속 진행
+                state.metrics["chat_history_error"] = str(e)
+                logger.debug(f"[CONTEXT_LOADER] 채팅 기록 로드 실패: {str(e)}")
+        else:
+            # 이미 chat_history가 있는 경우 로깅
+            logger.info(f"채팅 기록이 이미 로드되어 있습니다 - {len(chat_history)}개 메시지")
+            state.metrics["chat_history_count"] = len(chat_history)
         
         # 사용자 컨텍스트 정보 메트릭에 추가
         user_context = {
