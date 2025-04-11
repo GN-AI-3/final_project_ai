@@ -39,7 +39,7 @@ TOOL_DESCRIPTIONS = [
     },
     {
         "name": "master_select_db_multi",
-        "description": "PostgreSQL 데이터베이스에서 특정 테이블의 여러 조건(column=value) 기반으로 데이터를 조회한다. 반드시 TABLE_SCHEMA에 정의된 테이블과 컬럼만 사용 가능하다.",
+        "description": "PostgreSQL 데이터베이스에서 특정 테이블의 여러 조건(column=value) 기반으로 데이터를 조회한다. 반드시 TABLE_SCHEMA에 정의된 테이블과 컬럼만 사용 가능하다. 값은 숫자 혹은 한국어만 올 수 있다.",
         "input_format": {
             "table_name": "조회할 테이블 이름 (예: 'exercise_record')",
             "conditions": {
