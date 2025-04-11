@@ -226,16 +226,6 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 - Your last step must always generate a final comprehensive answer using all retrieved data
 - This step MUST NOT use a tool
 
-**RULE 7: USE PLACEHOLDER SYNTAX '{{{{table.column}}}}' FOR PREVIOUS STEP VALUES**
-- When referring to data retrieved in previous steps, you MUST use placeholder syntax like `{{{{exercise.id}}}}`
-- To ensure this does NOT get interpreted as a variable, use double-escaping like `{{{{exercise.id}}}}`
-- These placeholders will be automatically resolved at runtime based on earlier results
-- DO NOT manually insert or guess values like "exercise_id": "REPLACE_WITH_ID" or "exercise_id": "{{{{exercise.id}}}}"
-
-**RULE 8: FINAL OUTPUT MUST BE A JSON ARRAY (NO EXTRA WRAPPER)**
-- The output MUST be a pure JSON array like `[ {{...}}, {{...}} ]`
-- The system will directly execute the array, and any wrapper will break execution
-
 ---
 Now, generate the step-by-step JSON plan.
 """

@@ -12,13 +12,9 @@ import re
 def resolve_placeholders(input_data, context):
     if isinstance(input_data, dict):
         return {
-            key: resolve_placeholders(value, context)
+            key: replace_with_context(value, context) if isinstance(value, str) and "{{" in value else value
             for key, value in input_data.items()
         }
-    elif isinstance(input_data, list):
-        return [resolve_placeholders(item, context) for item in input_data]
-    elif isinstance(input_data, str) and "{{" in input_data:
-        return replace_with_context(input_data, context)
     return input_data
 
 def replace_with_context(text, context):
