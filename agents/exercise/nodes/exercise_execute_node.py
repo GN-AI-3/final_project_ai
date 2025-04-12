@@ -56,7 +56,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     except Exception as e:
         raise ValueError(f"Invalid plan JSON: {e}")
 
-    context = []
+    context = state.context or []
     results = []
 
     tools = {
@@ -99,6 +99,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
 
         results.append({
             "step": idx + 1,
+            "tool": tool_name,
             "description": description,
             "result": result
         })
@@ -115,7 +116,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     final_llm_input = "\n".join([
         f"사용자 질문: {message}",
         f"지금까지 수집된 정보:\n{json.dumps(context, ensure_ascii=False, indent=2)}",
-        f"최종 목적: 위 정보를 바탕으로 최종 결과를 요약하고 사용자가 이해하기 쉽게 정리해주세요. 단, 질문과 무관한 정보는 제외해야 합니다."
+        f"최종 목적: 위 정보를 바탕으로 사용자가 이해하기 쉽게 정리해서 질문에 답하세요. 단, 질문과 무관한 정보는 제외해야 합니다."
     ])
     final_response = llm.invoke([HumanMessage(content=final_llm_input)])
     final_result = final_response.content

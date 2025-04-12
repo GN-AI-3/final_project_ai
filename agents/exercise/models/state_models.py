@@ -7,4 +7,5 @@ class RoutingState(BaseModel):
     message: str
     plan: Optional[str] = None
     context: Optional[List[Any]] = None
+    feedback: Optional[str] = None
     result: Optional[Any] = None

@@ -32,7 +32,7 @@ TABLE_SCHEMA = {
 TOOL_DESCRIPTIONS = [
     {
         "name": "web_search",
-        "description": "웹 검색을 통해 운동 루틴이나 운동에 대한 정보를 수집한다. query에는 검색어 문자열을 넣는다.",
+        "description": "웹 검색을 통해 필요한 정보를 수집한다. query에는 검색어 문자열을 넣는다.",
         "input_format": {
             "query": "검색할 키워드 또는 문장 (예: '어깨 통증 원인', '등 운동 루틴')"
         }
@@ -52,7 +52,7 @@ TOOL_DESCRIPTIONS = [
         "name": "search_exercise_by_name",
         "description": "운동 이름을 검색하여 exercise_id를 조회한다. 검색어는 한국어만 올 수 있다.",
         "input_format": {
-            "name": "검색할 운동 이름 (예: '벤치 프레스')"
+            "name": "검색할 운동 이름"
         }
     }
 ]
@@ -62,6 +62,7 @@ tools = []
 def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     """사용자 질문과 테이블 정보를 통해 답변 생성 절차를 계획하는 노드"""
     message = state.message
+    feedback = state.feedback
     member_id = 3
 
     prompt = ChatPromptTemplate.from_messages([
@@ -70,6 +71,7 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         ("user", "{member_id}"),
         ("user", "{table_schema}"),
         ("user", "{tool_descriptions}"),
+        ("user", "{feedback}"),
         MessagesPlaceholder(variable_name="agent_scratchpad")
     ])
 
@@ -87,6 +89,7 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         "member_id": member_id,
         "table_schema": json.dumps(TABLE_SCHEMA, indent=2, ensure_ascii=False),
         "tool_descriptions": json.dumps(TOOL_DESCRIPTIONS, indent=2, ensure_ascii=False),
+        "feedback": feedback
     })
 
     print("exercise planning response: ", response["output"])

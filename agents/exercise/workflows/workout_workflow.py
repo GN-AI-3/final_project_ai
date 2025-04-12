@@ -5,6 +5,7 @@ from ..nodes.exercise_routine_node import exercise_routine_agent
 from ..nodes.exercise_form_node import exercise_form_agent, confirm_exercise_form_agent
 from ..nodes.exercise_type_node import exercise_type_agent
 from ..nodes.exercise_planning_node import planning
+from ..nodes.exercise_judge_node import judge
 from ..nodes.exercise_execute_node import execute_plan
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
@@ -29,6 +30,7 @@ def create_workout_workflow():
 
     workflow.add_node("exercise_planning", lambda state: planning(state, llm))
     workflow.add_node("exercise_execute", lambda state: execute_plan(state, llm))
+    workflow.add_node("exercise_judge", lambda state: judge(state, llm))
 
     # 엣지 추가
     # workflow.add_edge(START, "routing")
@@ -47,6 +49,15 @@ def create_workout_workflow():
 
     workflow.add_edge(START, "exercise_planning")
     workflow.add_edge("exercise_planning", "exercise_execute")
-    workflow.add_edge("exercise_execute", END)
+    workflow.add_edge("exercise_execute", "exercise_judge")
     
+    workflow.add_conditional_edges(
+        "exercise_judge", 
+        lambda state: "success" if state.feedback.strip() == "success" else "failure",
+        {
+            "success": END,
+            "failure": "exercise_planning"
+        }
+    )
+
     return workflow.compile()
