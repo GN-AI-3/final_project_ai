@@ -12,7 +12,7 @@ services:
 
   fastapi:
     build:
-      context: ./fastapi
+      context: .
     container_name: fastapi-ai
     restart: unless-stopped
     ports:

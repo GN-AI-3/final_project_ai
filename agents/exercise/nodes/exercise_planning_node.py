@@ -47,6 +47,13 @@ TOOL_DESCRIPTIONS = [
                 "column2": "값2"
             }
         }
+    },
+    {
+        "name": "search_exercise_by_name",
+        "description": "운동 이름을 검색하여 exercise_id를 조회한다. 검색어는 한국어만 올 수 있다.",
+        "input_format": {
+            "name": "검색할 운동 이름 (예: '벤치 프레스')"
+        }
     }
 ]
 

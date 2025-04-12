@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 import json
-from ..tools.exercise_routine_tools import master_select_db_multi, web_search
+from ..tools.exercise_routine_tools import master_select_db_multi, web_search, search_exercise_by_name
 from ..models.state_models import RoutingState
 import re
 
@@ -62,6 +62,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     tools = {
         "web_search": web_search,
         "master_select_db_multi": master_select_db_multi,
+        "search_exercise_by_name": search_exercise_by_name
     }
 
     for idx, step in enumerate(plan):
