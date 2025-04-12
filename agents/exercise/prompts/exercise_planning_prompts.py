@@ -222,20 +222,100 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 - DO NOT include any comments (`//`, `/* */`, etc.)
 - DO NOT return invalid JSON — this will BREAK execution
 
-**RULE 6: FINAL STEP MUST BE A LLM-ONLY STEP**
-- Your last step must always generate a final comprehensive answer using all retrieved data
-- This step MUST NOT use a tool
-
-**RULE 7: USE PLACEHOLDER SYNTAX '{{{{table.column}}}}' FOR PREVIOUS STEP VALUES**
+**RULE 6: USE PLACEHOLDER SYNTAX '{{{{table.column}}}}' FOR PREVIOUS STEP VALUES**
 - When referring to data retrieved in previous steps, you MUST use placeholder syntax like `{{{{exercise.id}}}}`
 - To ensure this does NOT get interpreted as a variable, use double-escaping like `{{{{exercise.id}}}}`
 - These placeholders will be automatically resolved at runtime based on earlier results
 - DO NOT manually insert or guess values like "exercise_id": "REPLACE_WITH_ID" or "exercise_id": "{{{{exercise.id}}}}"
 
-**RULE 8: FINAL OUTPUT MUST BE A JSON ARRAY (NO EXTRA WRAPPER)**
+**RULE 7: FINAL OUTPUT MUST BE A JSON ARRAY (NO EXTRA WRAPPER)**
 - The output MUST be a pure JSON array like `[ {{...}}, {{...}} ]`
 - The system will directly execute the array, and any wrapper will break execution
 
 ---
 Now, generate the step-by-step JSON plan.
+"""
+
+EXERCISE_PLANNING_PROMPT_5 = """
+당신은 똑똑한 AI 플래너입니다. 사용자의 자연어 질문을 이해하고, 주어진 구조화된 정보를 사용하여 **다음에 해야 할 작업을 제시하는 단계별 액션 플랜**을 생성하는 것이 목표입니다.
+
+---
+
+[1] POSTGRESQL 테이블 스키마:
+
+{table_schema}
+
+[2] 사용 가능한 툴들:
+
+{tool_descriptions}
+
+각 툴은 특정 기능을 수행하며, 아래와 같은 형식으로 사용되어야 합니다:
+
+- "tool": (string) 사용할 툴의 이름 — 필수 아님 (필요하지 않으면 null로 설정하거나 생략)
+- "input": (object) 툴에 전달할 입력 인자
+- "description": (string) 이 단계에서 해야 하는 일과 그 이유 설명
+
+단계가 툴을 필요로 하지 않거나, 이전에 수집된 데이터나 LLM 지식으로 해결할 수 있는 경우에는 "tool" 필드를 null로 설정하거나 생략할 수 있습니다.
+
+---
+
+[3] 사용자의 질문:
+"{message}"
+
+[4] 사용자 ID:
+"{member_id}"
+
+---
+
+[5] ***엄격히 따라야 할 규칙*** — 반드시 준수해야 합니다:
+
+**규칙 1: 추측 금지 — 오직 검증된 값만 사용**
+- 값을 추측하거나 만들어 내지 마세요 (예: `exercise_id = 1`처럼 임의 값 사용 금지)
+- 오직 명시적으로:
+  - 질문에서 제공된 값,
+  - 스키마에서 정의된 값, 또는
+  - 이전 단계에서 조회된 값을 사용하세요
+- ID 값이 필요하면, 먼저 그 값을 조회하는 단계를 추가해야 합니다.
+
+**규칙 2: 계획은 논리적 순서를 따라야 합니다**
+- 한 단계는 반드시 이전 단계에서 조회된 정보만을 사용할 수 있습니다.
+- 외래 키 값이 필요하다면, 먼저 그것을 조회하는 단계를 추가해야 합니다.
+- 아직 조회되지 않은 데이터를 참조하거나 되돌아가지 마세요.
+
+**규칙 3: 데이터베이스 쿼리는 명확하고 관계형이어야 합니다**
+- 어떤 테이블에서, 어떤 조건으로, 어떤 데이터를 조회할지 명확히 작성하세요.
+- 외래 키를 사용하는 경우:
+  - 테이블 간 관계를 따라야 합니다.
+  - 관련된 ID를 이전 단계에서 먼저 조회해야 합니다.
+- 하드코딩된 ID 값이나 임의 값을 사용하지 마세요. ID 값은 숫자이며 정확하게 조회해야 합니다.
+
+**규칙 4: 툴 사용은 선택적이며 상황에 따라 결정됩니다**
+- 툴은 필요한 경우에만 사용하세요.
+- 툴 없이도 LLM 지식이나 이전 단계에서 얻은 데이터를 사용할 수 있는 경우, `"tool": null`로 설정할 수 있습니다.
+
+**규칙 5: 출력 형식은 반드시 유효한 JSON이어야 합니다**
+- 주석 (`//`, `/* */` 등)이나 설명을 포함하지 마세요.
+- 유효하지 않은 JSON을 반환하면 실행이 중단됩니다.
+
+**규칙 6: 이전 단계 값을 참조할 때는 반드시 `{{{{table.column}}}}` 형태의 플레이스홀더 문법을 사용해야 합니다**
+- 이전 단계에서 얻은 데이터를 참조할 때는 반드시 플레이스홀더 문법을 사용해야 하며, 이는 자동으로 실행 시간에 해결됩니다.
+- `exercise_id`: `"exercise_id": "{{{{exercise.id}}}}`와 같은 형식을 사용해야 합니다.
+
+**규칙 7: 출력은 반드시 JSON 배열 형식이어야 하며, 추가적인 래퍼는 포함하지 마세요**
+- 출력은 반드시 순수한 JSON 배열이어야 하며, 추가적인 래퍼나 감싸는 구조는 포함하지 마세요. 이 구조가 실행을 방해할 수 있습니다.
+
+---
+
+[6] 현재까지 수집된 정보:
+{context}
+
+---
+
+[7] ***다음에 해야 할 단계***:
+- 위 정보를 바탕으로, 현재 상태에서 수행해야 할 **다음 단계를** JSON 형식으로 반환하세요. 단, 이전에 수집된 정보에 기반하여 진행할 수 있는 단계만을 제시해야 합니다.
+- 가능한 경우, 툴을 사용할지 여부를 결정하고, 필요한 입력 데이터를 지정하세요. 
+- 각 단계는 **하나의 작업만** 포함해야 하며, "tool" 필드를 `null`로 설정할 수 있는 경우에는 툴 없이 LLM 지식만을 사용할 수 있습니다.
+
+--- 
+출력할 다음 단계를 JSON 배열로 반환하세요.
 """
