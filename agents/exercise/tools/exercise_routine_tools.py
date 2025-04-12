@@ -198,4 +198,4 @@ def master_select_db_multi(
         conn.close()
         return json.dumps(result, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
-        return f"Database error: {str(e)}"
+        return json.dumps({"error": f"Database error: {str(e)}"})

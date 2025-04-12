@@ -43,4 +43,4 @@ class ExerciseAgent(BaseAgent):
         except Exception:
             pass
 
-        return final_state.message
+        return {"type": "exercise", "response": final_state["result"]}

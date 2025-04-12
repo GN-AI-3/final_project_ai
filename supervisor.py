@@ -9,6 +9,7 @@ from chat_history_manager import ChatHistoryManager
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
+import traceback
 
 class Supervisor:
     def __init__(self, model: ChatOpenAI):
@@ -201,6 +202,8 @@ class Supervisor:
             except Exception as e:
                 logger.error(f"에이전트 처리 오류 ({category}): {str(e)}")
                 
+                print(f"에이전트 처리 오류 ({category}): {str(e)}")
+                traceback.print_exc()
                 # 오류 발생 시 일반 에이전트로 대체
                 if category != "general":
                     try:
