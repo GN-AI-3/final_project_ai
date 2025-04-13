@@ -10,3 +10,4 @@ qdrant-client==1.13.3
 matplotlib==3.10.1
 langchain-community==0.3.20
 # langchain_teddynote
+schedule>=1.2.0

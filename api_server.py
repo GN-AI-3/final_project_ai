@@ -194,20 +194,45 @@ async def chat(chat_request: ChatRequest):
         # 응답 정보 로깅
         logger.info(f"[{request_id}] AI 응답 데이터: {json.dumps(response_data, ensure_ascii=False)[:200]}...")
         
+        # 응답 형식을 ChatResponse 모델에 맞게 변환
+        formatted_response = ChatResponse(
+            member_id=email or "anonymous",
+            timestamp=datetime.now().isoformat(),
+            member_input=message,
+            clarified_input=message,  # 현재는 명확화 과정이 없으므로 원본 메시지 사용
+            selected_agents=[response_data.get("type", "general")],
+            injected_context=InjectedContext(),  # 현재는 빈 컨텍스트
+            agent_outputs={response_data.get("type", "general"): response_data.get("response", "")},
+            final_response=response_data.get("response", ""),
+            execution_time=elapsed_time,
+            emotion_detected=False,  # 현재는 감정 분석 결과 없음
+            emotion_type=None,
+            emotion_score=None
+        )
+        
         # 응답 반환
-        return response_data
+        return formatted_response
         
     except Exception as e:
         # 오류 로깅
         logger.error(f"[{request_id}] 채팅 처리 중 오류 발생: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # 오류 응답 반환
-        return {
-            "type": "error",
-            "response": f"처리 중 오류가 발생했습니다: {str(e)}",
-            "error": str(e)
-        }
+        # 오류 응답 반환 (ChatResponse 형식)
+        error_response = ChatResponse(
+            member_id=email or "anonymous",
+            timestamp=datetime.now().isoformat(),
+            member_input=message,
+            clarified_input=None,
+            selected_agents=[],
+            agent_outputs={},
+            final_response=f"처리 중 오류가 발생했습니다: {str(e)}",
+            execution_time=0,
+            emotion_detected=False,
+            emotion_type=None,
+            emotion_score=None
+        )
+        return error_response
 
 # 대화 내역 조회 엔드포인트
 @app.get("/chat/history")
