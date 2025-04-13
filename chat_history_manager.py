@@ -169,80 +169,44 @@ class ChatHistoryManager:
         logger.info(f"[AI 메시지 저장] 이메일: {email}, 길이: {len(message)}")
         self._add_message(email, "ai", message)
     
-    async def add_chat_entry(self, email: str, role: str, message: str) -> None:
-        """
-        Add a message to the chat history with the specified role.
-        This is an async wrapper for _add_message to support async calls.
-        
-        Args:
-            email: User email
-            role: Message role ("user" or "assistant")
-            message: The message content
-        """
-        logger.info(f"[채팅 메시지 저장] 이메일: {email}, 역할: {role}, 길이: {len(message)}")
-        
-        # role 매핑 (assistant -> ai, 다른 것은 그대로)
-        adjusted_role = "ai" if role == "assistant" else role
-        
-        # 내부 메소드 호출 (비동기 호환)
-        self._add_message(email, adjusted_role, message)
-        return None
-    
     def _add_message(self, email: str, role: str, message: str) -> None:
         """Add a message to the user's chat history"""
         try:
-            # 안전한 메시지 처리 (인코딩 문제 방지)
-            safe_message = message
-            if not isinstance(safe_message, str):
-                try:
-                    safe_message = str(safe_message)
-                except Exception as e:
-                    logger.error(f"[메시지 문자열 변환 오류] {str(e)}")
-                    safe_message = "메시지 변환 오류"
-            
-            # 인코딩 문제 방지를 위한 처리
-            try:
-                safe_message = safe_message.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-            except Exception as e:
-                logger.error(f"[메시지 인코딩 처리 오류] {str(e)}")
-                # 최대한 복구 시도
-                try:
-                    safe_message = str(safe_message).encode('ascii', errors='replace').decode('ascii', errors='replace')
-                except:
-                    safe_message = "인코딩 오류 메시지"
-            
             # 메시지 데이터 생성
             message_data = {
                 "role": role,
-                "content": safe_message,
+                "content": message,
                 "timestamp": datetime.now().isoformat()
             }
             
             if self.use_redis and self.redis_client:
                 # Redis 저장
                 user_key = self._get_user_key(email)
-                json_data = json.dumps(message_data, ensure_ascii=False)
+                json_data = json.dumps(message_data)
                 
                 # 메시지 저장
-                result = self.redis_client.lpush(user_key, json_data)
+                result = self.redis_client.rpush(user_key, json_data)
                 
                 # 메시지 수 제한
-                self.redis_client.ltrim(user_key, 0, self.max_history - 1)
+                total_count = self.redis_client.llen(user_key)
+                if total_count > self.max_history:
+                    # 앞에서부터 초과분 제거
+                    excess = total_count - self.max_history
+                    self.redis_client.ltrim(user_key, excess, -1)
                 
                 # 결과 확인
-                total_count = self.redis_client.llen(user_key)
                 logger.info(f"[Redis 저장 완료] 이메일: {email}, 역할: {role}, 메시지 수: {total_count}")
             else:
                 # 메모리 저장
                 if email not in self.in_memory_storage:
                     self.in_memory_storage[email] = []
                 
-                # 메시지는 최신 순으로 저장 (새 메시지가 앞에)
-                self.in_memory_storage[email].insert(0, message_data)
+                # 메시지 추가 (시간순으로 저장)
+                self.in_memory_storage[email].append(message_data)
                 
                 # 메시지 수 제한
                 if len(self.in_memory_storage[email]) > self.max_history:
-                    self.in_memory_storage[email] = self.in_memory_storage[email][:self.max_history]
+                    self.in_memory_storage[email] = self.in_memory_storage[email][-self.max_history:]
                 
                 logger.info(f"[메모리 저장 완료] 이메일: {email}, 역할: {role}, 메시지 수: {len(self.in_memory_storage[email])}")
                 
@@ -268,91 +232,38 @@ class ChatHistoryManager:
                 total_count = self.redis_client.llen(user_key)
                 logger.info(f"[Redis 조회] 키: {user_key}, 총 메시지 수: {total_count}")
                 
-                # 가장 최근 메시지부터 조회 (가장 최근이 인덱스 0)
-                raw_messages = self.redis_client.lrange(user_key, 0, limit - 1)
+                if total_count == 0:
+                    return []
                 
-                # 메시지 파싱 및 정렬 (오래된 순)
-                for msg_json in reversed(raw_messages):
+                # 최근 메시지 가져오기 (오래된 순)
+                start_index = max(0, total_count - limit)
+                raw_messages = self.redis_client.lrange(user_key, start_index, -1)
+                
+                # 메시지 파싱
+                for msg_json in raw_messages:
                     try:
-                        # 인코딩 문제 방지
-                        if isinstance(msg_json, bytes):
-                            msg_json = msg_json.decode('utf-8', errors='replace')
-                            
                         msg_data = json.loads(msg_json)
-                        
-                        # 컨텐츠 인코딩 문제 추가 검사
-                        if "content" in msg_data and isinstance(msg_data["content"], str):
-                            try:
-                                msg_data["content"] = msg_data["content"].encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                            except Exception as e:
-                                logger.warning(f"메시지 내용 인코딩 처리 중 오류: {str(e)}")
-                                # 손상된 내용 복구 시도
-                                msg_data["content"] = str(msg_data["content"]).encode('ascii', errors='replace').decode('ascii', errors='replace')
-                                
                         messages.append(msg_data)
-                    except json.JSONDecodeError as e:
+                    except json.JSONDecodeError:
                         logger.error(f"[JSON 파싱 오류] 메시지: {msg_json[:100]}...")
-                        logger.error(f"JSON 파싱 오류 상세: {str(e)}")
                 
                 logger.info(f"[Redis 조회 완료] 이메일: {email}, 조회된 메시지 수: {len(messages)}")
             else:
-                # 메모리 저장소에서 조회
+                # 메모리에서 조회
                 if email in self.in_memory_storage:
-                    # 메모리 저장소에서는 이미 최신 순으로 저장되어 있음
-                    raw_messages = self.in_memory_storage[email][:limit]
-                    
-                    # 메시지 정렬 (오래된 순)
-                    for msg_data in reversed(raw_messages):
-                        # 컨텐츠 인코딩 문제 추가 검사
-                        if "content" in msg_data and isinstance(msg_data["content"], str):
-                            try:
-                                msg_data["content"] = msg_data["content"].encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                            except Exception as e:
-                                logger.warning(f"메시지 내용 인코딩 처리 중 오류: {str(e)}")
-                                # 손상된 내용 복구 시도
-                                msg_data["content"] = str(msg_data["content"]).encode('ascii', errors='replace').decode('ascii', errors='replace')
-                        
-                        messages.append(msg_data)
-                    
+                    # 최신 메시지만 가져옴
+                    messages = self.in_memory_storage[email][-limit:]
                     logger.info(f"[메모리 조회 완료] 이메일: {email}, 조회된 메시지 수: {len(messages)}")
                 else:
-                    logger.info(f"[메모리 조회] 이메일: {email}에 대한 대화 내역 없음")
+                    logger.info(f"[메모리 조회] 이메일: {email} 기록 없음")
             
-            # 최종 안전 검사 - 잘못된 형식의 메시지 필터링
-            safe_messages = []
-            for msg in messages:
-                if not isinstance(msg, dict):
-                    logger.warning(f"잘못된 메시지 형식 스킵: {type(msg)}")
-                    continue
-                    
-                # 필수 필드 검사
-                if "role" not in msg or "content" not in msg:
-                    logger.warning(f"필수 필드 누락된 메시지 스킵: {msg.keys()}")
-                    continue
-                    
-                # content 필드 안전 처리
-                if not isinstance(msg["content"], str):
-                    try:
-                        msg["content"] = str(msg["content"])
-                    except:
-                        msg["content"] = "컨텐츠 변환 오류"
-                        
-                # role 필드 안전 처리
-                if not isinstance(msg["role"], str):
-                    try:
-                        msg["role"] = str(msg["role"])
-                    except:
-                        msg["role"] = "unknown"
-                
-                safe_messages.append(msg)
-                
-            return safe_messages
-            
+            return messages
+        
         except Exception as e:
             logger.error(f"[대화 내역 조회 오류] 이메일: {email}, 오류: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            return []  # 오류 발생 시 빈 목록 반환
+            return []
     
     def clear_history(self, email: str) -> bool:
         """Clear the chat history for a user"""
@@ -396,7 +307,7 @@ class ChatHistoryManager:
         except Exception as e:
             logger.error(f"Error formatting chat history: {str(e)}")
             return []
-    
+            
     async def get_chat_history(self, email: str, limit: int = 20) -> List[Dict[str, Any]]:
         """
         Get chat history for a user.
@@ -481,6 +392,26 @@ class ChatHistoryManager:
         logger.info(f"[대화 내역 삭제 요청] 이메일: {email}")
         return self.clear_history(email)
     
+    async def add_chat_entry(self, email: str, role: str, content: str, timestamp=None) -> bool:
+        """
+        Add a chat entry to the user's chat history.
+        This is an async wrapper for add_message to support async calls.
+        
+        Args:
+            email: User email
+            role: Message role ('user' or 'assistant')
+            content: Message content
+            timestamp: Message timestamp
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if role == "assistant":
+            role = "ai"
+            
+        self._add_message(email, role, content)
+        return True
+            
     async def save_chat_history(self, email: str, chat_history: List[Dict[str, Any]]) -> None:
         """
         Save the entire chat history for a user. This overwrites the existing history.
@@ -492,57 +423,20 @@ class ChatHistoryManager:
         logger.info(f"[채팅 내역 저장] 이메일: {email}, 메시지 수: {len(chat_history)}")
         
         try:
-            if self.use_redis and self.redis_client:
-                # Redis 저장 - 기존 데이터 삭제
-                user_key = self._get_user_key(email)
+            # 기존 내역 삭제
+            self.clear_history(email)
+            
+            # 새 내역 저장
+            for message in chat_history:
+                role = "ai" if message.get("role") == "assistant" else message.get("role", "user")
+                content = message.get("content", "")
                 
-                # 파이프라인으로 작업 일괄 처리
-                pipe = self.redis_client.pipeline()
+                # 메시지 추가
+                self._add_message(email, role, content)
                 
-                # 기존 내역 삭제
-                pipe.delete(user_key)
-                
-                # 새로운 내역 저장 (역순으로 저장해야 최신 메시지가 앞에 옴)
-                for message in reversed(chat_history):
-                    # role 필드 조정 (assistant -> ai)
-                    adjusted_role = "ai" if message.get("role") == "assistant" else message.get("role")
-                    
-                    message_data = {
-                        "role": adjusted_role,
-                        "content": message.get("content", ""),
-                        "timestamp": message.get("timestamp", datetime.now().isoformat())
-                    }
-                    
-                    json_data = json.dumps(message_data, ensure_ascii=False)
-                    pipe.lpush(user_key, json_data)
-                
-                # 실행
-                pipe.execute()
-                logger.info(f"[Redis 채팅 내역 저장 완료] 이메일: {email}")
-                
-            else:
-                # 메모리 저장
-                # 채팅 내역 변환 (assistant -> ai)
-                converted_history = []
-                for message in chat_history:
-                    adjusted_role = "ai" if message.get("role") == "assistant" else message.get("role")
-                    
-                    message_data = {
-                        "role": adjusted_role,
-                        "content": message.get("content", ""),
-                        "timestamp": message.get("timestamp", datetime.now().isoformat())
-                    }
-                    converted_history.append(message_data)
-                
-                # 최신 메시지가 앞에 오도록 저장
-                self.in_memory_storage[email] = list(reversed(converted_history))
-                
-                # 메시지 수 제한
-                if len(self.in_memory_storage[email]) > self.max_history:
-                    self.in_memory_storage[email] = self.in_memory_storage[email][:self.max_history]
-                
-                logger.info(f"[메모리 채팅 내역 저장 완료] 이메일: {email}")
+            logger.info(f"[채팅 내역 저장 완료] 이메일: {email}")
                 
         except Exception as e:
             logger.error(f"[채팅 내역 저장 오류] 이메일: {email}, 오류: {str(e)}")
-            # 오류를 전파하지 않고 경고만 로깅 
+            import traceback
+            logger.error(traceback.format_exc()) 

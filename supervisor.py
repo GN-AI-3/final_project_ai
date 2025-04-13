@@ -26,6 +26,13 @@ from langgraph.graph import StateGraph, END
 # 대화 내역 관리자 임포트
 from chat_history_manager import ChatHistoryManager
 
+# OpenAI 및 관련 모듈 임포트
+try:
+    import openai
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    logging.warning("OpenAI 관련 라이브러리를 찾을 수 없습니다.")
+
 # 로깅 설정
 def setup_logging():
     """LangGraph 모듈에 대한 로깅을 설정합니다."""
@@ -214,280 +221,274 @@ class SupervisorState:
 # ======== 2. Supervisor 클래스 정의 ========
 class Supervisor:
     """
-    Supervisor 클래스는 LangGraph를 사용하여 다중 에이전트 실행을 관리합니다.
-    에이전트 노드를 직접 등록하고 워크플로우를 구성할 수 있습니다.
+    에이전트 관리 및 메시지 처리를 담당하는 수퍼바이저 클래스
     """
+    def __init__(self, model):
+        """모델과 에이전트 초기화"""
+        self.model = model
+        self.chat_history_manager = ChatHistoryManager()
+        
+        # API 키 설정
+        if hasattr(model, 'openai_api_key'):
+            api_key = model.openai_api_key
+            if hasattr(api_key, 'get_secret_value'):
+                api_key = api_key.get_secret_value()
+            os.environ["OPENAI_API_KEY"] = api_key
+            
+        # OpenAI 클라이언트
+        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # 에이전트 초기화 (구현 필요)
+        self.agents = {}
+        self._init_agents()
     
-    def __init__(self):
-        """빈 그래프로 Supervisor를 초기화합니다."""
-        # 메트릭 초기화
-        self.metrics = {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "avg_execution_time": 0,
-            "node_usage": {}
+    def _init_agents(self):
+        """내부 메서드: 사용할 에이전트 초기화"""
+        # 여기서 에이전트를 동적으로 로드하거나 초기화
+        # 예: self.agents = {"exercise": ExerciseAgent(self.model), ...}
+        from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
+        self.agents = {
+            "exercise": ExerciseAgent(self.model),
+            "food": FoodAgent(self.model),
+            "schedule": ScheduleAgent(self.model),
+            "motivation": MotivationAgent(self.model),
+            "general": GeneralAgent(self.model)
         }
-        
-        # 그래프 생성
-        self.graph = StateGraph()
-        self.nodes = {}
-        self.is_compiled = False
-        
-        # 대화 내역 관리자 초기화
-        self.chat_manager = ChatHistoryManager()
-        
-        logger.info("Supervisor가 빈 그래프로 초기화되었습니다")
     
-    def add_node(self, node_name: str, node_func: Callable):
-        """
-        그래프에 노드를 추가합니다.
-        
-        Args:
-            node_name: 노드 이름
-            node_func: 노드 함수
-        """
-        if self.is_compiled:
-            logger.warning("그래프가 이미 컴파일되어 노드를 추가할 수 없습니다")
-            return
-            
-        # 그래프에 노드 추가
-        self.graph.add_node(node_name, node_func)
-        
-        # 노드 함수 저장
-        self.nodes[node_name] = node_func
-        
-        # 메트릭 업데이트
-        self.metrics["node_usage"][node_name] = 0
-        
-        logger.info(f"노드 추가됨: {node_name}")
-    
-    def add_edge(self, from_node: str, to_node: str):
-        """
-        노드 간에 엣지를 추가합니다.
-        
-        Args:
-            from_node: 시작 노드 이름
-            to_node: 대상 노드 이름 또는 "END"
-        """
-        if self.is_compiled:
-            logger.warning("그래프가 이미 컴파일되어 엣지를 추가할 수 없습니다")
-            return
-            
-        # 엣지 추가
-        if to_node == "END":
-            self.graph.add_edge(from_node, END)
-        else:
-            self.graph.add_edge(from_node, to_node)
-        
-        logger.info(f"엣지 추가됨: {from_node} -> {to_node}")
-    
-    def add_conditional_edges(self, from_node: str, condition_func: Callable, destinations: Dict[str, str]):
-        """
-        노드에서 조건부 엣지를 추가합니다.
-        
-        Args:
-            from_node: 시작 노드 이름
-            condition_func: 어떤 엣지를 선택할지 결정하는 함수
-            destinations: 조건 결과에서 대상 노드로의 매핑
-        """
-        if self.is_compiled:
-            logger.warning("그래프가 이미 컴파일되어 조건부 엣지를 추가할 수 없습니다")
-            return
-            
-        self.graph.add_conditional_edges(from_node, condition_func, destinations)
-        logger.info(f"조건부 엣지 추가됨: {from_node}에서 시작")
-    
-    def set_entry_point(self, node_name: str):
-        """
-        그래프의 진입점을 설정합니다.
-        
-        Args:
-            node_name: 진입점 노드 이름
-        """
-        if self.is_compiled:
-            logger.warning("그래프가 이미 컴파일되어 진입점을 설정할 수 없습니다")
-            return
-            
-        self.graph.set_entry_point(node_name)
-        logger.info(f"진입점 설정됨: {node_name}")
-    
-    def compile(self):
-        """그래프를 컴파일합니다."""
-        if self.is_compiled:
-            logger.warning("그래프가 이미 컴파일되었습니다")
-            return
-            
-        if not self.nodes:
-            logger.error("빈 그래프는 컴파일할 수 없습니다")
-            return
-            
-        # 그래프 컴파일
-        self.workflow = self.graph.compile()
-        self.is_compiled = True
-        
-        logger.info("그래프 컴파일 완료")
-    
-    async def process_message(
-        self, 
-        message: str, 
-        email: str = None,
-        chat_history: Optional[List[Dict[str, Any]]] = None,
-        request_id: Optional[str] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        워크플로우를 통해 사용자 메시지를 처리합니다.
-        
-        Args:
-            message: 사용자 메시지 텍스트
-            email: 사용자 이메일
-            chat_history: 선택적 대화 내역
-            request_id: 선택적 요청 ID (제공되지 않으면 생성됨)
-            **kwargs: 초기 상태에 포함할 추가 매개변수
-            
-        Returns:
-            Dict: 워크플로우 실행 결과
-        """
-        if not self.is_compiled:
-            raise ValueError("메시지를 처리하기 전에 그래프를 컴파일해야 합니다")
-            
-        # 타이밍 시작
-        start_time = time.time()
-        
-        # 제공되지 않은 경우 요청 ID 생성
-        if request_id is None:
-            request_id = str(uuid.uuid4())
-            
-        # 대화 내역 로드 또는 초기화
-        if chat_history is None:
-            if email:
-                chat_history = self.chat_manager.load_chat_history(email)
-            else:
-                chat_history = []
-        
-        # 요청 시작 로깅
-        logger.info(f"[{request_id}] 사용자 메시지 처리 시작: {email or '익명'}")
-        
-        # 총 요청 증가
-        self.metrics["total_requests"] += 1
-        
+    def get_conversation_context(self, email: str, limit: int = 5) -> str:
+        """대화 내역을 문맥으로 가져오기"""
         try:
-            # 워크플로우 상태 초기화
-            initial_state = {
-                "request_id": request_id,
-                "message": message,
-                "email": email,
-                "chat_history": chat_history,
-                "start_time": start_time,
-                "used_nodes": [],  # 사용된 노드 추적
-                **kwargs
-            }
-            
-            # 워크플로우 실행
-            result = await self.workflow.ainvoke(initial_state)
-            
-            # 실행 시간 기록
-            execution_time = time.time() - start_time
-            
-            # 메트릭 업데이트
-            self.metrics["successful_requests"] += 1
-            self._update_avg_execution_time(execution_time)
-            
-            # 결과에 추적된 경우 노드 사용량 메트릭 업데이트
-            if "used_nodes" in result:
-                for node_name in result.get("used_nodes", []):
-                    if node_name in self.metrics["node_usage"]:
-                        self.metrics["node_usage"][node_name] = self.metrics["node_usage"].get(node_name, 0) + 1
-            
-            # 결과에 실행 시간 추가
-            result["execution_time"] = execution_time
-            
-            # 성공적인 완료 로깅
-            logger.info(f"[{request_id}] 처리 완료: {execution_time:.2f}초")
-            
-            # 응답이 있는 경우 대화 내역에 사용자 메시지와 응답 추가
-            if "response" in result:
-                updated_chat_history = chat_history + [
-                    {"role": "user", "content": message},
-                    {"role": "assistant", "content": result["response"]}
-                ]
-                result["chat_history"] = updated_chat_history
+            if not email:
+                logger.info("이메일이 제공되지 않아 대화 내역을 조회하지 않습니다.")
+                return ""
                 
-                # 이메일이 있는 경우 대화 내역 저장
-                if email:
-                    self.chat_manager.save_chat_history(email, updated_chat_history)
+            logger.info(f"대화 내역 조회 - 이메일: {email}, 개수: {limit}")
+            messages = self.chat_history_manager.get_recent_messages(email, limit)
             
-            return result
+            if not messages:
+                logger.info(f"조회된 대화 내역 없음 - 이메일: {email}")
+                return ""
+                
+            # 대화 내역 형식화
+            context = "이전 대화 내역:\n"
+            for msg in messages:
+                role = "사용자" if msg.get("role") == "user" else "AI"
+                content = msg.get("content", "")
+                if len(content) > 200:  # 길이 제한
+                    content = content[:200] + "..."
+                context += f"{role}: {content}\n"
+            
+            logger.info(f"대화 내역 조회 완료 - {len(messages)}개 메시지")
+            return context
             
         except Exception as e:
-            # 실패 기록
-            self.metrics["failed_requests"] += 1
+            logger.error(f"대화 내역 조회 오류: {str(e)}")
+            return ""
+    
+    async def analyze_message(self, message: str, context: str = "") -> str:
+        """메시지 분석 및 카테고리 분류"""
+        try:
+            # 분류용 프롬프트
+            system_content = """당신은 PT 상담 서비스를 위한 메시지 분류 전문가입니다.
+            다음 카테고리 중 하나로 메시지를 분류해주세요:
             
-            # 오류 로깅
-            logger.error(f"[{request_id}] 메시지 처리 중 오류 발생: {str(e)}")
-            logger.error(traceback.format_exc())
+            1. schedule: PT 일정 예약, 조회, 변경, 취소 관련 문의
+            2. exercise: 운동 방법, 루틴, 효과, 자세, 종류 등 PT 일정 외 운동 관련 문의
+            3. food: 식단 관리, 영양소, 음식 추천, 건강한 식습관 관련 문의
+            4. motivation: 정서적 지원, 동기부여, 의지 약화, 피로감, 좌절, 우울함 등 심리적 도움 요청
+            5. general: 위 카테고리에 속하지 않는 일반 질문이나 대화
             
-            # 오류 정보 반환
-            execution_time = time.time() - start_time
-            error_response = "죄송합니다, 메시지를 처리하는 동안 오류가 발생했습니다."
-            
-            return {
-                "request_id": request_id,
-                "error": f"메시지 처리 오류: {str(e)}",
-                "response": error_response,
-                "execution_time": execution_time,
-                "chat_history": chat_history + [
-                    {"role": "user", "content": message},
-                    {"role": "assistant", "content": error_response}
-                ]
+            응답 형식: 
+            {
+              "category": "카테고리명",
+              "confidence": 신뢰도(0.0~1.0),
+              "reasoning": "분류 이유 간단 설명"
             }
-    
-    def process_message_sync(
-        self, 
-        message: str, 
-        email: str = None,
-        chat_history: Optional[List[Dict[str, Any]]] = None,
-        request_id: Optional[str] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        process_message의 동기식 래퍼.
-        
-        Args:
-            message: 사용자 메시지 텍스트
-            email: 사용자 이메일
-            chat_history: 선택적 대화 내역
-            request_id: 선택적 요청 ID
-            **kwargs: 초기 상태에 포함할 추가 매개변수
             
-        Returns:
-            Dict: 워크플로우 실행 결과
-        """
-        return asyncio.run(self.process_message(message, email, chat_history, request_id, **kwargs))
+            위 형식의 유효한 JSON으로만 응답해야 합니다."""
+            
+            # 사용자 메시지 구성
+            user_content = message
+            if context:
+                user_content = f"이전 대화 내역:\n{context}\n\n현재 메시지: {message}"
+                
+            # API 호출
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.1,
+                max_tokens=150
+            )
+            
+            response_text = response.choices[0].message.content.strip()
+            logger.info(f"분류 응답: {response_text}")
+            
+            # 결과 파싱
+            try:
+                result = json.loads(response_text)
+                category = result.get("category", "").lower()
+                confidence = result.get("confidence", 0.0)
+                reasoning = result.get("reasoning", "")
+                
+                logger.info(f"분류 결과: 카테고리={category}, 신뢰도={confidence}, 이유={reasoning}")
+                
+                # 유효한 카테고리 확인
+                valid_categories = ["exercise", "food", "schedule", "motivation", "general"]
+                if category in valid_categories:
+                    return category
+                else:
+                    logger.warning(f"잘못된 카테고리 '{category}' 반환됨, 'general'로 기본 설정")
+                    return "general"
+                    
+            except json.JSONDecodeError:
+                logger.error(f"JSON 파싱 실패: {response_text}")
+                return await self.analyze_emotion_based(message)
+                
+        except Exception as e:
+            logger.error(f"메시지 분석 오류: {str(e)}")
+            return "general"
     
-    def _update_avg_execution_time(self, execution_time: float):
-        """평균 실행 시간 메트릭을 업데이트합니다."""
-        current_avg = self.metrics["avg_execution_time"]
-        successful_requests = self.metrics["successful_requests"]
-        
-        if successful_requests == 1:
-            # 첫 번째 성공적인 요청
-            self.metrics["avg_execution_time"] = execution_time
-        else:
-            # 이동 평균 업데이트
-            self.metrics["avg_execution_time"] = (
-                current_avg * (successful_requests - 1) + execution_time
-            ) / successful_requests
+    async def analyze_emotion_based(self, message: str) -> str:
+        """감정 기반 분류 (fallback)"""
+        try:
+            system_content = """다음 메시지에서 감정을 분석하고 카테고리를 분류해주세요:
+            - motivation: 부정적 감정이 느껴지는 경우 (우울함, 좌절, 불안 등)
+            - exercise: 운동 관련 내용
+            - food: 음식, 식단 관련 내용
+            - schedule: 일정 관련 내용
+            - general: 위 어느 것에도 해당하지 않는 경우
+            
+            카테고리만 응답해주세요."""
+            
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            category = response.choices[0].message.content.strip().lower()
+            valid_categories = ["exercise", "food", "schedule", "motivation", "general"]
+            
+            return category if category in valid_categories else "general"
+            
+        except Exception as e:
+            logger.error(f"감정 분석 오류: {str(e)}")
+            return "general"
     
-    def get_metrics(self) -> Dict[str, Any]:
-        """
-        수퍼바이저의 실행 메트릭을 가져옵니다.
-        
-        Returns:
-            Dict: 요청 및 노드 사용량에 대한 메트릭
-        """
-        return self.metrics
+    async def process(self, message: str, member_id: int = None, email: str = None) -> Dict[str, Any]:
+        """메시지 처리 메인 메서드"""
+        request_id = str(uuid.uuid4())
+        try:
+            logger.info(f"[{request_id}] 메시지 처리 시작 - 이메일: {email or '없음'}, 메시지: {message[:50]}...")
+            
+            # 이전 대화 내역 가져오기
+            context = ""
+            chat_history = []
+            if email:
+                # 대화 내역 조회 (문자열 컨텍스트용)
+                context = self.get_conversation_context(email)
+                
+                # 대화 내역 조회 (에이전트 전달용)
+                if hasattr(self.chat_history_manager, 'get_formatted_history'):
+                    chat_history = self.chat_history_manager.get_formatted_history(email, limit=5)
+                    logger.info(f"[{request_id}] 채팅 내역 조회 결과: {len(chat_history)}개 메시지")
+                    
+                    if chat_history and len(chat_history) > 0:
+                        # 처음 및 마지막 메시지 로깅
+                        first_msg = chat_history[0] if chat_history else {}
+                        last_msg = chat_history[-1] if len(chat_history) > 0 else {}
+                        logger.info(f"[{request_id}] 첫 번째 메시지: {first_msg.get('role')} - {first_msg.get('content', '')[:30]}...")
+                        logger.info(f"[{request_id}] 마지막 메시지: {last_msg.get('role')} - {last_msg.get('content', '')[:30]}...")
+            
+            # 메시지 분류
+            category = await self.analyze_message(message, context)
+            agent = self.agents.get(category, self.agents["general"])
+            logger.info(f"[{request_id}] 메시지 카테고리: {category}")
+            
+            # 에이전트 호출
+            response_data = None
+            try:
+                # 에이전트가 지원하는 매개변수에 따라 호출
+                if email:
+                    try:
+                        # 기본 처리: 채팅 내역과 함께 호출 시도
+                        if hasattr(agent, 'process') and 'chat_history' in agent.process.__code__.co_varnames:
+                            logger.info(f"[{request_id}] 에이전트 '{category}'에 채팅 내역과 함께 호출")
+                            response_data = await agent.process(message, email=email, chat_history=chat_history)
+                        # 폴백 1: 컨텍스트와 함께 호출 시도
+                        elif hasattr(agent, 'process') and 'context' in agent.process.__code__.co_varnames:
+                            logger.info(f"[{request_id}] 에이전트 '{category}'에 컨텍스트와 함께 호출")
+                            response_data = await agent.process(message, email=email, context=context)
+                        # 폴백 2: 이메일만 전달
+                        else:
+                            logger.info(f"[{request_id}] 에이전트 '{category}'에 이메일만 전달하여 호출")
+                            response_data = await agent.process(message, email=email)
+                    except TypeError as te:
+                        logger.warning(f"[{request_id}] 에이전트 호출 타입 오류: {str(te)}, 기본 호출로 폴백")
+                        response_data = await agent.process(message)
+                else:
+                    response_data = await agent.process(message)
+                
+                # 응답 검증
+                if response_data is None:
+                    response_data = {
+                        "type": category,
+                        "response": f"죄송합니다. {category} 관련 요청을 처리하는 중에 문제가 발생했습니다."
+                    }
+                
+                # 대화 내역 저장
+                if email and isinstance(response_data, dict) and "response" in response_data:
+                    # 사용자 메시지 저장
+                    await self.chat_history_manager.add_chat_entry(
+                        email=email,
+                        role="user",
+                        content=message,
+                        timestamp=time.time()
+                    )
+                    
+                    # AI 응답 저장 (role을 assistant로 통일)
+                    await self.chat_history_manager.add_chat_entry(
+                        email=email,
+                        role="assistant",  # 'ai'가 아닌 'assistant'로 통일
+                        content=response_data["response"],
+                        timestamp=time.time()
+                    )
+                
+                return response_data
+                
+            except Exception as e:
+                logger.error(f"[{request_id}] 에이전트 처리 오류: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                # 일반 에이전트로 폴백
+                if category != "general":
+                    try:
+                        response_data = await self.agents["general"].process(message)
+                        if response_data:
+                            return response_data
+                    except Exception as e2:
+                        logger.error(f"[{request_id}] 일반 에이전트 폴백 오류: {str(e2)}")
+                
+                # 기본 응답
+                return {
+                    "type": "general",
+                    "response": "죄송합니다. 요청을 처리하는 중에 문제가 발생했습니다."
+                }
+                
+        except Exception as e:
+            logger.error(f"[{request_id}] 처리 중 심각한 오류: {str(e)}")
+            logger.error(traceback.format_exc())
+            return {
+                "type": "general",
+                "response": "죄송합니다. 요청을 처리하는 중에 문제가 발생했습니다."
+            }
 
 def execute_agents(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     """

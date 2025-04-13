@@ -18,11 +18,8 @@ import uuid
 # 대화 내역 관리자 임포트
 from chat_history_manager import ChatHistoryManager
 
-# LangGraph 기반 Supervisor 임포트
-from langgraph_supervisor.supervisor import Supervisor
-
-# 에이전트 임포트
-from agents import ExerciseAgent, FoodAgent, ScheduleAgent, MotivationAgent, GeneralAgent
+# 루트 폴더의 Supervisor 임포트
+from supervisor import Supervisor
 from langchain_openai import ChatOpenAI
 
 # 로깅 설정
@@ -46,36 +43,11 @@ llm = ChatOpenAI(temperature=0.7)
 # 대화 내역 관리자 초기화
 chat_history_manager = ChatHistoryManager()
 
-# LangGraph Supervisor 인스턴스 생성
-supervisor = Supervisor()
+# 루트 폴더의 Supervisor 인스턴스 생성
+supervisor = Supervisor(model=llm)
 
-# 에이전트 등록
-logger.info("에이전트 등록 시작")
-
-# 개별 에이전트 등록을 시도 (오류가 있어도 계속 진행)
-def register_agent_safely(name, agent_class):
-    try:
-        agent = agent_class(llm=llm)
-        supervisor.register_agent(name, agent)
-        logger.info(f"'{name}' 에이전트 등록 성공")
-        return True
-    except Exception as e:
-        logger.error(f"'{name}' 에이전트 등록 실패: {str(e)}")
-        logger.debug(traceback.format_exc())
-        return False
-
-# 각 에이전트 등록 시도
-success_count = 0
-success_count += register_agent_safely("exercise", ExerciseAgent)
-success_count += register_agent_safely("food", FoodAgent)
-success_count += register_agent_safely("schedule", ScheduleAgent)
-success_count += register_agent_safely("motivation", MotivationAgent)
-success_count += register_agent_safely("general", GeneralAgent)
-
-# 결과 로깅
-logger.info(f"{success_count}개 에이전트가 성공적으로 등록되었습니다.")
-if success_count < 5:
-    logger.warning("일부 에이전트 등록에 실패했습니다. 일부 기능만 사용 가능합니다.")
+# 에이전트 임포트
+from agents import ExerciseAgent, FoodAgent, ScheduleAgent, MotivationAgent, GeneralAgent
 
 # 유틸리티 함수: JSON 데이터를 보기 좋게 출력
 def log_pretty_json(prefix, data):
@@ -189,238 +161,53 @@ async def root():
     return {"message": "AI 피트니스 코치 API 서버에 오신 것을 환영합니다"}
 
 # 채팅 엔드포인트
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
-    # 이메일 정보가 요청에서 제공되면 사용, 없으면 기본값 사용
-    user_email = request.email or "anonymous@example.com"
-    request_id = str(uuid.uuid4())  # 고유 요청 ID 생성
-    logger.info(f"[{request_id}] 채팅 요청 받음 - 사용자: {user_email}, 메시지: {request.message[:50]}...")
+@app.post("/chat")
+async def chat(chat_request: ChatRequest):
+    request_id = str(uuid.uuid4())
+    message = chat_request.message
+    email = chat_request.email
     
-    # 기본 응답 구조 설정
-    response_created_at = datetime.now().isoformat()
-    default_response = ChatResponse(
-        member_id=user_email,
-        timestamp=response_created_at,
-        member_input=request.message,
-        final_response="",
-        execution_time=0
-    )
+    logger.info(f"[{request_id}] 채팅 요청 받음 - 사용자: {email}, 메시지: {message[:50]}...")
+    
+    # 기존 대화 내역 불러오기
+    if email:
+        chat_history = chat_history_manager.get_formatted_history(email)
+        logger.info(f"[{request_id}] 대화 내역 불러오기 완료 - 항목 수: {len(chat_history)}")
+    else:
+        chat_history = []
     
     try:
-        # 1. 사용자 메시지를 Redis에 저장
-        await chat_history_manager.add_chat_entry(user_email, "user", request.message)
-        
-        # 2. 대화 내역 불러오기
-        chat_history = await chat_history_manager.get_chat_history(user_email)
-        logger.info(f"[{request_id}] 대화 내역 불러오기 완료 - 항목 수: {len(chat_history)}")
-        
-        # 3. Supervisor 처리 시작
-        start_time = time.time()
+        # Supervisor 처리 파이프라인 시작
         logger.info(f"[{request_id}] Supervisor 파이프라인 처리 시작")
+        start_time = time.time()
         
-        # LangGraph Supervisor 실행
-        # user_id 매개변수를 email로 전달
-        response_data = await supervisor.process_message(
-            message=request.message, 
-            user_id=user_email, 
-            chat_history=chat_history,
-            request_id=request_id
+        # 루트 폴더의 Supervisor 호출
+        response_data = await supervisor.process(
+            message=message, 
+            email=email
         )
         
-        # 처리 시간 계산
-        execution_time = time.time() - start_time
-        logger.info(f"[{request_id}] Supervisor 파이프라인 처리 완료 (소요시간: {execution_time:.2f}초)")
+        # 처리 완료 로깅
+        elapsed_time = time.time() - start_time
+        logger.info(f"[{request_id}] Supervisor 파이프라인 처리 완료 (소요시간: {elapsed_time:.2f}초)")
         
-        # 응답 데이터 로깅
-        log_pretty_json(f"[{request_id}] AI 응답 데이터", response_data)
+        # 응답 정보 로깅
+        logger.info(f"[{request_id}] AI 응답 데이터: {json.dumps(response_data, ensure_ascii=False)[:200]}...")
         
-        # 4. 응답 정보 추출
-        actual_request_id = response_data.get("request_id", request_id)
-        
-        # 선택된 에이전트 정보 추출 - 여러 필드 이름 시도 (호환성)
-        selected_agents = response_data.get("selected_agents", [])
-        
-        # selected_agents가 비어있으면 categories로부터 가져오기 
-        if not selected_agents:
-            selected_agents = response_data.get("categories", [])
-            
-        # 여전히 비어있으면 기본값 설정
-        if not selected_agents:
-            selected_agents = ["general"]
-            
-        response_type = selected_agents[0] if selected_agents else "general"
-        
-        # Extract response string from possible dictionary response
-        response_raw = response_data.get("response", "죄송합니다. 요청을 처리할 수 없습니다.")
-        if isinstance(response_raw, dict):
-            if "response" in response_raw:
-                response_message = response_raw["response"]
-            elif "content" in response_raw:
-                response_message = response_raw["content"]
-            else:
-                response_message = str(response_raw)
-        else:
-            response_message = response_raw
-            
-        error = response_data.get("error")
-        
-        # 오류 발생시 로깅
-        if error:
-            logger.warning(f"[{actual_request_id}] 처리 중 오류 발생: {error}")
-        
-        # 5. AI 응답을 Redis에 저장 (오류가 아닌 경우에만)
-        if not error:
-            await chat_history_manager.add_chat_entry(user_email, "assistant", response_message)
-        
-        # 6. 스케줄링 명령어 처리
-        if "schedule" in request.message.lower() or "예약" in request.message:
-            if response_type == "schedule" or "schedule" in selected_agents:
-                background_tasks.add_task(schedule_motivation_message, user_email, request.message)
-                logger.info(f"[{actual_request_id}] 스케줄링 명령어 감지 - 사용자: {user_email}")
-        
-        # 7. 에이전트 출력 파싱
-        agent_outputs = {}
-        clarified_input = request.message
-        final_selected_agents = []
-        
-        # agent_results가 있으면 사용
-        if "agent_results" in response_data and response_data["agent_results"]:
-            for result in response_data["agent_results"]:
-                if result.get("success", False):
-                    agent_name = result.get("agent", "unknown")
-                    agent_result = result.get("result", "")
-                    agent_outputs[agent_name] = _extract_agent_content(agent_result)
-                    final_selected_agents.append(agent_name)
-                    
-        # agent_outputs에서 사용하는 경우
-        elif "agent_outputs" in response_data and response_data["agent_outputs"]:
-            for agent_name, agent_output in response_data["agent_outputs"].items():
-                agent_outputs[agent_name] = _extract_agent_content(agent_output)
-                final_selected_agents.append(agent_name)
-        else:
-            # 단일 에이전트 응답인 경우
-            final_selected_agents = [response_type]
-            agent_outputs[response_type] = _extract_agent_content(response_message)
-        
-        # 8. 응답 포맷팅 및 반환
-        # 감정 분석 결과 추출
-        emotion_type = response_data.get("emotion_type", "중립")
-        emotion_score = response_data.get("emotion_score", 0.0)
-        emotion_detected = emotion_score != 0.0
-        
-        # 컨텍스트 정보 생성 (확장 가능)
-        injected_context = InjectedContext(
-            emotion_type=emotion_type,
-            emotion_score=emotion_score
-        )
-        
-        response = ChatResponse(
-            member_id=user_email,
-            timestamp=response_created_at,
-            member_input=request.message,
-            clarified_input=clarified_input,
-            selected_agents=final_selected_agents,
-            injected_context=injected_context,
-            agent_outputs=agent_outputs,
-            final_response=response_message,
-            execution_time=execution_time,
-            emotion_detected=emotion_detected,
-            emotion_type=emotion_type,
-            emotion_score=emotion_score
-        )
-        
-        logger.info(f"[{actual_request_id}] 응답 생성 완료 - 에이전트: {final_selected_agents}")
-        return response
+        # 응답 반환
+        return response_data
         
     except Exception as e:
-        # 자세한 오류 정보 로깅
-        error_message = f"요청 처리 중 오류 발생: {str(e)}"
-        logger.error(f"[{request_id}] {error_message}")
+        # 오류 로깅
+        logger.error(f"[{request_id}] 채팅 처리 중 오류 발생: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # 오류 응답 생성
-        default_response.final_response = f"죄송합니다. 요청을 처리하는 중에 오류가 발생했습니다: {str(e)}"
-        
-        return JSONResponse(
-            status_code=500,
-            content=default_response.dict()
-        )
-
-# 메트릭 엔드포인트
-@app.get("/metrics")
-async def get_metrics():
-    try:
-        # Supervisor 메트릭 사용
-        metrics = supervisor.get_metrics()
-        
-        # Redis 통계 추가
-        try:
-            redis_stats = await chat_history_manager.get_stats()
-            metrics["redis"] = redis_stats
-        except Exception as e:
-            logger.error(f"Redis 통계 조회 중 오류: {str(e)}")
-            metrics["redis"] = {"error": str(e)}
-        
-        # 시스템 정보 추가
-        metrics["version"] = "1.0.0"
-        metrics["timestamp"] = datetime.now().isoformat()
-        
-        return metrics
-    except Exception as e:
-        logger.error(f"메트릭 조회 중 오류: {str(e)}")
-        return {"error": str(e), "timestamp": datetime.now().isoformat()}
-
-# 메트릭 리셋 엔드포인트
-@app.post("/metrics/reset")
-async def reset_metrics():
-    try:
-        # LangGraph Supervisor는 메트릭 초기화 메서드가 없으므로 직접 초기화
-        supervisor.metrics = {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "avg_execution_time": 0,
-            "node_usage": {}
-        }
+        # 오류 응답 반환
         return {
-            "status": "success", 
-            "message": "메트릭이 초기화되었습니다.", 
-            "timestamp": datetime.now().isoformat()
+            "type": "error",
+            "response": f"처리 중 오류가 발생했습니다: {str(e)}",
+            "error": str(e)
         }
-    except Exception as e:
-        logger.error(f"메트릭 초기화 중 오류 발생: {str(e)}")
-        return {
-            "status": "error", 
-            "message": f"메트릭 초기화 중 오류 발생: {str(e)}", 
-            "timestamp": datetime.now().isoformat()
-        }
-
-# 상태 확인 엔드포인트 
-@app.get("/status")
-async def status():
-    status_info = {
-        "status": "online",
-        "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0",
-        "llm_model": os.getenv("OPENAI_MODEL_NAME", "gpt-3.5-turbo"),
-        "using_langgraph": True,
-        "supervisor_type": "LangGraph Supervisor"
-    }
-    
-    # 메트릭 요약 추가
-    try:
-        metrics = supervisor.get_metrics()
-        status_info["metrics_summary"] = {
-            "requests_processed": metrics.get("total_requests", 0),
-            "successful_responses": metrics.get("successful_requests", 0),
-            "failed_responses": metrics.get("failed_requests", 0),
-            "avg_execution_time": metrics.get("avg_execution_time", 0)
-        }
-    except Exception as e:
-        logger.error(f"메트릭 요약 조회 중 오류: {str(e)}")
-        status_info["metrics_summary"] = {"error": str(e)}
-    
-    return status_info
 
 # 대화 내역 조회 엔드포인트
 @app.get("/chat/history")
@@ -459,61 +246,6 @@ async def clear_chat_history(email: str = None):
     except Exception as e:
         logger.error(f"대화 내역 삭제 중 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"대화 내역 삭제 중 오류 발생: {str(e)}")
-
-# 에이전트 목록 조회 엔드포인트
-@app.get("/agents")
-async def list_agents():
-    try:
-        # 사용 가능한 에이전트 목록 - 빈 목록 대신 노드 사용량에서 얻기
-        metrics = supervisor.get_metrics()
-        registered_agents = list(metrics.get("node_usage", {}).keys())
-        
-        # 에이전트별 메트릭 추가
-        agent_metrics = metrics.get("node_usage", {})
-        
-        # 에이전트 정보 구성
-        agents_info = {}
-        for agent_id in registered_agents:
-            agents_info[agent_id] = {
-                "status": "active",
-                "metrics": {"usage_count": agent_metrics.get(agent_id, 0)}
-            }
-        
-        return {
-            "agents": agents_info,
-            "count": len(registered_agents),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"에이전트 목록 조회 중 오류: {str(e)}")
-        return {"error": str(e), "timestamp": datetime.now().isoformat()}
-
-# 에이전트 정보 조회 엔드포인트
-@app.get("/agents/{agent_id}")
-async def get_agent_info(agent_id: str):
-    try:
-        # 노드 사용량에서 에이전트 정보 추출
-        metrics = supervisor.get_metrics()
-        node_usage = metrics.get("node_usage", {})
-        
-        if agent_id not in node_usage:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"에이전트 '{agent_id}'를 찾을 수 없습니다.", "timestamp": datetime.now().isoformat()}
-            )
-        
-        # 에이전트 메트릭 추가
-        agent_metrics = {"usage_count": node_usage.get(agent_id, 0)}
-        
-        return {
-            "agent_id": agent_id,
-            "status": "active",
-            "metrics": agent_metrics,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"에이전트 정보 조회 중 오류: {str(e)}")
-        return {"error": str(e), "timestamp": datetime.now().isoformat()}
 
 if __name__ == "__main__":
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True) 
