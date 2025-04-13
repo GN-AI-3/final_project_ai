@@ -169,6 +169,25 @@ class ChatHistoryManager:
         logger.info(f"[AI 메시지 저장] 이메일: {email}, 길이: {len(message)}")
         self._add_message(email, "ai", message)
     
+    async def add_chat_entry(self, email: str, role: str, message: str) -> None:
+        """
+        Add a message to the chat history with the specified role.
+        This is an async wrapper for _add_message to support async calls.
+        
+        Args:
+            email: User email
+            role: Message role ("user" or "assistant")
+            message: The message content
+        """
+        logger.info(f"[채팅 메시지 저장] 이메일: {email}, 역할: {role}, 길이: {len(message)}")
+        
+        # role 매핑 (assistant -> ai, 다른 것은 그대로)
+        adjusted_role = "ai" if role == "assistant" else role
+        
+        # 내부 메소드 호출 (비동기 호환)
+        self._add_message(email, adjusted_role, message)
+        return None
+    
     def _add_message(self, email: str, role: str, message: str) -> None:
         """Add a message to the user's chat history"""
         try:
@@ -376,4 +395,154 @@ class ChatHistoryManager:
         
         except Exception as e:
             logger.error(f"Error formatting chat history: {str(e)}")
-            return [] 
+            return []
+    
+    async def get_chat_history(self, email: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get chat history for a user.
+        This is an async wrapper for get_recent_messages to support async calls.
+        
+        Args:
+            email: User email
+            limit: Maximum number of messages to return
+            
+        Returns:
+            List of chat messages in chronological order
+        """
+        logger.info(f"[대화 내역 조회 요청] 이메일: {email}, 최대 개수: {limit}")
+        
+        # 기본 목록 얻기
+        messages = self.get_recent_messages(email, limit)
+        
+        # app.py에서 기대하는 형식으로 포맷 변환
+        formatted_messages = []
+        for msg in messages:
+            role = "assistant" if msg["role"] == "ai" else msg["role"]
+            formatted_messages.append({
+                "role": role,
+                "content": msg["content"],
+                "timestamp": msg.get("timestamp", datetime.now().isoformat())
+            })
+        
+        logger.info(f"[대화 내역 조회 완료] 이메일: {email}, 반환된 메시지 수: {len(formatted_messages)}")
+        return formatted_messages
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the chat history manager.
+        
+        Returns:
+            Dictionary with statistics
+        """
+        stats = {
+            "using_redis": self.use_redis,
+            "max_history": self.max_history,
+            "users": 0,
+            "total_messages": 0,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        try:
+            if self.use_redis and self.redis_client:
+                # Redis stats
+                keys = self.redis_client.keys("chat_history:*")
+                stats["users"] = len(keys)
+                
+                total_msgs = 0
+                for key in keys:
+                    total_msgs += self.redis_client.llen(key)
+                
+                stats["total_messages"] = total_msgs
+            else:
+                # Memory stats
+                stats["users"] = len(self.in_memory_storage)
+                total_msgs = sum(len(msgs) for msgs in self.in_memory_storage.values())
+                stats["total_messages"] = total_msgs
+                
+            logger.info(f"채팅 통계: {stats['users']} 사용자, {stats['total_messages']} 메시지")
+            return stats
+        
+        except Exception as e:
+            logger.error(f"통계 수집 중 오류: {str(e)}")
+            stats["error"] = str(e)
+            return stats
+    
+    async def delete_chat_history(self, email: str) -> bool:
+        """
+        Delete chat history for a user.
+        This is an async wrapper for clear_history to support async calls.
+        
+        Args:
+            email: User email
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"[대화 내역 삭제 요청] 이메일: {email}")
+        return self.clear_history(email)
+    
+    async def save_chat_history(self, email: str, chat_history: List[Dict[str, Any]]) -> None:
+        """
+        Save the entire chat history for a user. This overwrites the existing history.
+        
+        Args:
+            email: User email
+            chat_history: List of chat messages with role and content
+        """
+        logger.info(f"[채팅 내역 저장] 이메일: {email}, 메시지 수: {len(chat_history)}")
+        
+        try:
+            if self.use_redis and self.redis_client:
+                # Redis 저장 - 기존 데이터 삭제
+                user_key = self._get_user_key(email)
+                
+                # 파이프라인으로 작업 일괄 처리
+                pipe = self.redis_client.pipeline()
+                
+                # 기존 내역 삭제
+                pipe.delete(user_key)
+                
+                # 새로운 내역 저장 (역순으로 저장해야 최신 메시지가 앞에 옴)
+                for message in reversed(chat_history):
+                    # role 필드 조정 (assistant -> ai)
+                    adjusted_role = "ai" if message.get("role") == "assistant" else message.get("role")
+                    
+                    message_data = {
+                        "role": adjusted_role,
+                        "content": message.get("content", ""),
+                        "timestamp": message.get("timestamp", datetime.now().isoformat())
+                    }
+                    
+                    json_data = json.dumps(message_data, ensure_ascii=False)
+                    pipe.lpush(user_key, json_data)
+                
+                # 실행
+                pipe.execute()
+                logger.info(f"[Redis 채팅 내역 저장 완료] 이메일: {email}")
+                
+            else:
+                # 메모리 저장
+                # 채팅 내역 변환 (assistant -> ai)
+                converted_history = []
+                for message in chat_history:
+                    adjusted_role = "ai" if message.get("role") == "assistant" else message.get("role")
+                    
+                    message_data = {
+                        "role": adjusted_role,
+                        "content": message.get("content", ""),
+                        "timestamp": message.get("timestamp", datetime.now().isoformat())
+                    }
+                    converted_history.append(message_data)
+                
+                # 최신 메시지가 앞에 오도록 저장
+                self.in_memory_storage[email] = list(reversed(converted_history))
+                
+                # 메시지 수 제한
+                if len(self.in_memory_storage[email]) > self.max_history:
+                    self.in_memory_storage[email] = self.in_memory_storage[email][:self.max_history]
+                
+                logger.info(f"[메모리 채팅 내역 저장 완료] 이메일: {email}")
+                
+        except Exception as e:
+            logger.error(f"[채팅 내역 저장 오류] 이메일: {email}, 오류: {str(e)}")
+            # 오류를 전파하지 않고 경고만 로깅 

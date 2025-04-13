@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass
 from enum import Enum, auto
 from agents.food.common.prompts import get_analyze_input_prompt
+import traceback
 
 # LangSmith 설정
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -44,10 +45,26 @@ class FoodAgent:
     
     DEFAULT_MODEL = "gpt-4o-mini"
     
-    def __init__(self, model_name: str = DEFAULT_MODEL):
-        """음식 에이전트 초기화"""
+    def __init__(self, model_name: str = DEFAULT_MODEL, model: Optional[ChatOpenAI] = None, llm: Optional[ChatOpenAI] = None):
+        """
+        음식 에이전트 초기화
+        
+        Args:
+            model_name: 사용할 모델 이름 (llm이나 model이 제공되지 않을 경우)
+            model: 레거시 파라미터 이름 (ChatOpenAI 인스턴스)
+            llm: ChatOpenAI 인스턴스
+        """
+        # 모델 이름 저장 (에러 회피용)
         self.model_name = self._validate_model_name(model_name)
-        self.llm = self._initialize_llm()
+        
+        # LLM 초기화
+        if llm is not None:
+            self.llm = llm
+        elif model is not None:
+            self.llm = model
+        else:
+            self.llm = self._initialize_llm()
+            
         self.prompts = self._initialize_prompts()
         self.subagents = self._initialize_subagents()
     
@@ -83,11 +100,11 @@ class FoodAgent:
     def _initialize_subagents(self) -> Dict[str, Any]:
         """하위 에이전트 초기화"""
         return {
-            IntentType.MEAL_INPUT: MealInputAgent(self.model_name),
-            IntentType.MEAL_RECOMMENDATION: BalancedMealAgent(self.model_name),
-            IntentType.NUTRIENT_ANALYSIS: NutrientAgent(self.model_name),
-            IntentType.MEAL_LOOKUP: BalancedMealAgent(self.model_name),
-            IntentType.OTHER: BalancedMealAgent(self.model_name)
+            IntentType.MEAL_INPUT: MealInputAgent(self.llm),
+            IntentType.MEAL_RECOMMENDATION: BalancedMealAgent(self.llm),
+            IntentType.NUTRIENT_ANALYSIS: NutrientAgent(self.llm),
+            IntentType.MEAL_LOOKUP: BalancedMealAgent(self.llm),
+            IntentType.OTHER: BalancedMealAgent(self.llm)
         }
     
     def _parse_intent(self, response: AIMessage) -> Optional[Intent]:
@@ -123,9 +140,22 @@ class FoodAgent:
             "response": f"죄송합니다. {message}"
         }
     
-    async def process(self, user_input: str, user_id: str = "1") -> Dict[str, Any]:
-        """사용자 입력 처리"""
+    async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """
+        사용자 메시지를 처리합니다.
+        
+        Args:
+            message: 사용자 메시지
+            email: 사용자 이메일 (선택사항)
+            chat_history: 대화 내역 (선택사항)
+            
+        Returns:
+            Dict[str, Any]: 응답 메시지와 관련 정보
+        """
         try:
+            user_id = email or "1"  # 이메일을 사용자 ID로 취급
+            user_input = message    # 메시지를 기존 user_input 파라미터로 매핑
+            
             # LLM을 사용하여 의도 분석
             intent_analysis = await self._analyze_intent_with_llm(user_input)
             print(f"의도 분석 결과: {intent_analysis}")  # 디버깅용 로그 추가
