@@ -7,8 +7,12 @@ from dotenv import load_dotenv
 from psycopg2 import sql
 import json
 from ..models.input_models import MasterSelectInput
+from elasticsearch import Elasticsearch
 
 load_dotenv()
+
+es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
+exercise_index_name = "exercises"
 
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME"),
@@ -33,7 +37,6 @@ TABLE_SCHEMA = {
     }
 }
 
-@tool
 def web_search(query: str) -> str:
     """웹 검색 운동 루틴 추천"""
     tavily_client = TavilyClient(
@@ -196,6 +199,68 @@ def master_select_db_multi(
         result = [dict(zip(column_names, row)) for row in rows]
         cursor.close()
         conn.close()
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Database error: {str(e)}"})
+    
+def search_exercise_by_name(name: str):
+    name_compact = name.replace(" ", "")
+
+    try:
+        res = es.search(
+            index=exercise_index_name,
+            query={
+                "bool": {
+                    "should": [
+                        {
+                            "term": {
+                                "name_compact": {
+                                    "value": name_compact,
+                                    "boost": 30  # 정확 일치 최고 가중치
+                                }
+                            }
+                        },
+                        {
+                            "match_phrase": {
+                                "name": {
+                                    "query": name,
+                                    "boost": 10
+                                }
+                            }
+                        },
+                        {
+                            "multi_match": {
+                                "query": name,
+                                "type": "best_fields",
+                                "fields": ["name^1", "name._2gram^0.2", "name._3gram^0.1"]
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }
+        )
+
+        hits = res["hits"]["hits"]
+        if not hits:
+            return json.dumps([])
+
+        max_score = hits[0]["_score"]
+        threshold = max_score * 0.98
+
+        exercises = [
+            {
+                "id": hit["_source"]["exercise_id"],
+                "name": hit["_source"]["name"]
+            }
+            for hit in hits if hit["_score"] >= threshold
+        ]
+        
+        if len(exercises) == 1:
+            result = exercises[0]  # 단일 객체
+        else:
+            result = exercises
+
         return json.dumps(result, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"error": f"Database error: {str(e)}"})
