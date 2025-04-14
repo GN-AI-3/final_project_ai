@@ -54,6 +54,13 @@ TOOL_DESCRIPTIONS = [
         "input_format": {
             "name": "검색할 운동 이름"
         }
+    },
+    {
+        "name": "retrieve_exercise_info_by_similarity",
+        "description": "사용자의 질문이나 운동 관련 문장을 기반으로, 유사한 운동 정보를 벡터 DB(Qdrant)에서 조회한다. 이 툴은 운동명뿐 아니라 전체 운동 설명, 목적, 자세 등을 검색하는 데 사용된다.",
+        "input_format": {
+            "query": "운동 정보 검색을 위한 문장 또는 키워드를 영어로 입력한다. (e.g., 'exercises to build a wider back', 'leg workouts that are easy on the knees')"
+        }
     }
 ]
 

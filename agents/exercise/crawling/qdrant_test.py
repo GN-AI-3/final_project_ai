@@ -8,6 +8,7 @@ import json
 from sentence_transformers import SentenceTransformer
 import glob
 from tqdm import tqdm
+import uuid
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -23,7 +24,8 @@ if not os.getenv("QDRANT_API_KEY"):
     raise ValueError("QDRANT_API_KEY environment variable is not set")
 
 # Sentence Transformer 모델 초기화
-model = SentenceTransformer('all-MiniLM-L6-v2')
+# model = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('all-mpnet-base-v2')
 
 def create_exercise_collection():
     """운동 데이터를 저장할 컬렉션 생성"""
@@ -31,7 +33,8 @@ def create_exercise_collection():
         qdrant_client.create_collection(
             collection_name="exercises",
             vectors_config=models.VectorParams(
-                size=384,  # all-MiniLM-L6-v2 모델의 임베딩 크기
+                # size=384,  # all-MiniLM-L6-v2 모델의 임베딩 크기
+                size=768,  # all-mpnet-base-v2 모델의 임베딩 크기
                 distance=models.Distance.COSINE
             )
         )
@@ -39,22 +42,28 @@ def create_exercise_collection():
     except Exception as e:
         print(f"Collection might already exist: {e}")
 
-def prepare_exercise_text(exercise_data):
-    """운동 데이터를 임베딩하기 위한 텍스트로 변환"""
-    text_parts = [
-        f"Exercise: {exercise_data.get('exercise_name', '')}",
-        f"Classification: {exercise_data.get('Classification', {}).get('Utility', '')} {exercise_data.get('Classification', {}).get('Mechanics', '')} {exercise_data.get('Classification', {}).get('Force', '')}",
-        f"Instructions: {exercise_data.get('Instructions', {}).get('Preparation', '')} {exercise_data.get('Instructions', {}).get('Execution', '')}",
-        f"Comments: {exercise_data.get('Comments', {}).get('Comments', '')}",
-        f"Target Muscles: {', '.join(exercise_data.get('Muscles', {}).get('Target', []))}",
-        f"Synergists: {', '.join(exercise_data.get('Muscles', {}).get('Synergists', []))}",
-        f"Stabilizers: {', '.join(exercise_data.get('Muscles', {}).get('Stabilizers', []))}"
-    ]
-    return " ".join(text_parts)
+def flatten_json(y, prefix=''):
+    out = []
+
+    if isinstance(y, dict):
+        for k, v in y.items():
+            new_prefix = f"{prefix} {k}".strip()
+            out.extend(flatten_json(v, new_prefix))
+    elif isinstance(y, list):
+        for i, item in enumerate(y):
+            out.extend(flatten_json(item, prefix))
+    else:
+        out.append(f"{prefix}: {y}")
+
+    return out
+
+def prepare_text(data):
+    flat_parts = flatten_json(data)
+    return " ".join(flat_parts)
 
 def process_json_files():
     """JSON 파일들을 처리하여 Qdrant에 저장"""
-    json_dir = "data/exercise_list_json_structured"
+    json_dir = "data/exercise_list_json_title"
     json_files = glob.glob(os.path.join(json_dir, "*.json"))
     
     print(f"Found {len(json_files)} JSON files to process")
@@ -66,7 +75,7 @@ def process_json_files():
                 exercise_data = json.load(f)
             
             # 운동 데이터를 텍스트로 변환
-            exercise_text = prepare_exercise_text(exercise_data)
+            exercise_text = prepare_text(exercise_data)
 
             # chunking by langchain
             # text_splitter = RecursiveCharacterTextSplitter(
@@ -83,16 +92,19 @@ def process_json_files():
                 collection_name="exercises",
                 points=[
                     models.PointStruct(
-                        id=hash(json_file),  # 파일 경로를 기반으로 한 고유 ID
+                        id=str(uuid.uuid5(uuid.NAMESPACE_URL, json_file)),
                         vector=embedding.tolist(),
                         payload={
                             "exercise_name": exercise_data.get('exercise_name', ''),
-                            "url": exercise_data.get('url', ''),
-                            "file_path": json_file
+                            "file_path": json_file,
+                            "target_muscles": exercise_data.get("Muscles", {}).get("Target", []),
+                            "content": exercise_text
                         }
                     )
                 ]
             )
+        
+            print(f"Processed {json_file}")
             
         except Exception as e:
             print(f"Error processing {json_file}: {e}")
@@ -116,7 +128,7 @@ def checkInfo():
     print(qdrant_client.count("exercises"))
 
 def test():
-    query_text = "bench press"
+    query_text = "Chest workouts"
     query_vector = model.encode(query_text).tolist()
 
     search_results = qdrant_client.search(
@@ -132,3 +144,5 @@ def test():
 
 if __name__ == "__main__":
     test()
+    # create_exercise_collection()
+    # process_json_files()

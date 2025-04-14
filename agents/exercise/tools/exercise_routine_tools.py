@@ -6,13 +6,22 @@ import re
 from dotenv import load_dotenv
 from psycopg2 import sql
 import json
-from ..models.input_models import MasterSelectInput
 from elasticsearch import Elasticsearch
+from qdrant_client import QdrantClient
+from sentence_transformers import SentenceTransformer
+from qdrant_client.models import SearchParams
 
 load_dotenv()
 
 es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
 exercise_index_name = "exercises"
+
+qdrant_client = QdrantClient(
+    url="https://9429a5d7-55d9-43fa-8ad7-8e6cfcd37e22.europe-west3-0.gcp.cloud.qdrant.io:6333", 
+    api_key=os.getenv("QDRANT_API_KEY")
+)
+
+model = SentenceTransformer('all-mpnet-base-v2')
 
 DB_CONFIG = {
     "dbname": os.getenv("POSTGRES_DB"),
@@ -43,7 +52,14 @@ def web_search(query: str) -> str:
         api_key=os.getenv("TAVILY_API_KEY")
     )
     results = tavily_client.search(query)
-    return results
+
+    filtered_results = sorted(
+        [r for r in results.get("results", []) if r.get("score", 0) >= 0.7],
+        key=lambda x: x.get("score", 0),
+        reverse=True
+    )[:3]
+
+    return json.dumps(filtered_results, indent=2, ensure_ascii=False)
 
 @tool
 def get_user_goal(user_id: str) -> str:
@@ -262,5 +278,31 @@ def search_exercise_by_name(name: str):
             result = exercises
 
         return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Database error: {str(e)}"})
+    
+def retrieve_exercise_info_by_similarity(query: str):
+    """Qdrant - 운동 정보 검색"""
+    query_vector = model.encode(query).tolist()
+    try:
+        res = qdrant_client.search(
+            collection_name="exercises",
+            query_vector=query_vector,
+            limit=3,
+            search_params=SearchParams(hnsw_ef=128, exact=False)
+        )
+
+        filtered_results = [
+            {
+                "score": round(result.score, 4),
+                "content": result.payload.get("content", "No content")
+            }
+            for result in res if result.score >= 0.6
+        ]
+
+        for i, item in enumerate(filtered_results):
+            print(f"{i+1}. 🔹 Score: {item['score']}\n   📄 Content: {item['content']}\n")
+
+        return json.dumps(filtered_results, indent=2, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"Database error: {str(e)}"})

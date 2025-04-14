@@ -247,6 +247,12 @@ def get_structured_data(driver, url, name):
     try:
         # BeautifulSoup으로 HTML 파싱
         soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+        title_tag = soup.find('h1', class_='page-title')
+        if title_tag:
+            exercise_data['exercise_name'] = title_tag.get_text(strip=True)
+        else:
+            exercise_data['exercise_name'] = name
         
         # 첫 번째 article 태그 찾기
         article = soup.find('article')
@@ -291,8 +297,8 @@ def get_structured_data(driver, url, name):
 
 def save_progress(exercise_data):
     # 프로젝트 루트 디렉토리 경로 설정 (data/src -> data -> project root)
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    json_dir = os.path.join(project_root, "data", "exercise_list_json_structured")
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    json_dir = os.path.join(project_root, "data", "exercise_list_json_title")
     
     # JSON 디렉토리가 없으면 생성
     os.makedirs(json_dir, exist_ok=True)
@@ -319,7 +325,7 @@ def main():
     
     try:
         # 프로젝트 루트 디렉토리 경로 설정 (data/src -> data -> project root)
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         csv_file = os.path.join(project_root, "data", "exercise_list_csv", "exercise_list_unique.csv")
         
         with open(csv_file, mode="r", encoding="utf-8") as file:
