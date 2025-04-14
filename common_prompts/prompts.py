@@ -32,19 +32,6 @@ QDRANT_INSIGHTS_PROMPT = """당신은 전문 AI 피트니스 코치입니다. �
 
 위 정보를 활용하여 사용자의 성향, 목표, 선호도를 고려한 개인화된 답변을 제공하세요. 인사이트 정보는 자연스럽게 활용하고, 데이터를 직접적으로 언급하지 마세요."""
 
-# QDrant 검색 결과 활용 프롬프트
-QDRANT_SEARCH_PROMPT = """당신은 전문 AI 피트니스 코치입니다. 사용자의 질문과 관련된 과거 대화 내용을 참고하여 답변해 주세요.
-
-사용자의 질문: {message}
-
-관련 과거 대화 내용:
-{relevant_conversations}
-
-이전 대화 내역:
-{chat_history}
-
-위 정보를 바탕으로 사용자의 질문에 답변하세요. 과거 대화에서 나온 정보를 자연스럽게 활용하여, 마치 이전 대화를 기억하고 있는 것처럼 일관된 답변을 제공하세요."""
-
 # 카테고리 분류를 위한 맥락 고려 프롬프트
 CATEGORY_CONTEXT_PROMPT = """당신은 사용자의 메시지를 분석하고 적절한 카테고리로 분류하는 도우미입니다.
 이전 대화 내역과 현재 메시지를 고려하여 가장 적합한 카테고리를 찾아야 합니다.
@@ -78,4 +65,4 @@ CATEGORY_CONTEXT_PROMPT = """당신은 사용자의 메시지를 분석하고 �
 # 나중에 추가될 수 있는 다른 공통 프롬프트들
 # OTHER_PROMPT = """..."""
 
-__all__ = ["AGENT_CONTEXT_PROMPT", "QDRANT_INSIGHTS_PROMPT", "QDRANT_SEARCH_PROMPT", "CATEGORY_CONTEXT_PROMPT"] 
+__all__ = ["AGENT_CONTEXT_PROMPT", "QDRANT_INSIGHTS_PROMPT", "CATEGORY_CONTEXT_PROMPT"]
