@@ -18,7 +18,7 @@ import uuid
 # 대화 내역 관리자 임포트
 from chat_history_manager import ChatHistoryManager
 
-# 루트 폴더의 Supervisor 임포트
+# 수퍼바이저 모듈 임포트
 from supervisor import Supervisor
 from langchain_openai import ChatOpenAI
 
@@ -43,11 +43,18 @@ llm = ChatOpenAI(temperature=0.7)
 # 대화 내역 관리자 초기화
 chat_history_manager = ChatHistoryManager()
 
-# 루트 폴더의 Supervisor 인스턴스 생성
+# 수퍼바이저 인스턴스 생성
 supervisor = Supervisor(model=llm)
 
 # 에이전트 임포트
 from agents import ExerciseAgent, FoodAgent, ScheduleAgent, MotivationAgent, GeneralAgent
+
+# 에이전트 등록
+supervisor.register_agent("exercise", ExerciseAgent(llm))
+supervisor.register_agent("food", FoodAgent(llm))
+supervisor.register_agent("schedule", ScheduleAgent(llm))
+supervisor.register_agent("motivation", MotivationAgent(llm))
+supervisor.register_agent("general", GeneralAgent(llm))
 
 # 유틸리티 함수: JSON 데이터를 보기 좋게 출력
 def log_pretty_json(prefix, data):
@@ -169,22 +176,25 @@ async def chat(chat_request: ChatRequest):
     
     logger.info(f"[{request_id}] 채팅 요청 받음 - 사용자: {email}, 메시지: {message[:50]}...")
     
-    # 기존 대화 내역 불러오기
-    if email:
-        chat_history = chat_history_manager.get_formatted_history(email)
-        logger.info(f"[{request_id}] 대화 내역 불러오기 완료 - 항목 수: {len(chat_history)}")
-    else:
-        chat_history = []
-    
     try:
+        # 채팅 내역 조회
+        chat_history = []
+        if email:
+            try:
+                chat_history = await chat_history_manager.get_chat_history(email, limit=10)
+                logger.info(f"[{request_id}] 대화 내역 조회 완료 - {len(chat_history)}개 메시지")
+            except Exception as e:
+                logger.warning(f"[{request_id}] 대화 내역 조회 실패: {str(e)}")
+        
         # Supervisor 처리 파이프라인 시작
         logger.info(f"[{request_id}] Supervisor 파이프라인 처리 시작")
         start_time = time.time()
         
-        # 루트 폴더의 Supervisor 호출
+        # 모듈화된 Supervisor 호출
         response_data = await supervisor.process(
-            message=message, 
-            email=email
+            message=message,
+            email=email,
+            chat_history=chat_history
         )
         
         # 처리 완료 로깅
@@ -192,7 +202,16 @@ async def chat(chat_request: ChatRequest):
         logger.info(f"[{request_id}] Supervisor 파이프라인 처리 완료 (소요시간: {elapsed_time:.2f}초)")
         
         # 응답 정보 로깅
-        logger.info(f"[{request_id}] AI 응답 데이터: {json.dumps(response_data, ensure_ascii=False)[:200]}...")
+        log_pretty_json(f"[{request_id}] AI 응답 데이터", response_data)
+        
+        # 대화 내역에 추가
+        if email:
+            try:
+                await chat_history_manager.add_chat_entry(email, "user", message)
+                await chat_history_manager.add_chat_entry(email, "assistant", response_data.get("response", ""))
+                logger.info(f"[{request_id}] 대화 내역 저장 완료 - 사용자: {email}")
+            except Exception as save_e:
+                logger.error(f"[{request_id}] 대화 내역 저장 중 오류: {str(save_e)}")
         
         # 응답 형식을 ChatResponse 모델에 맞게 변환
         formatted_response = ChatResponse(
@@ -200,9 +219,9 @@ async def chat(chat_request: ChatRequest):
             timestamp=datetime.now().isoformat(),
             member_input=message,
             clarified_input=message,  # 현재는 명확화 과정이 없으므로 원본 메시지 사용
-            selected_agents=[response_data.get("type", "general")],
+            selected_agents=response_data.get("selected_agents", ["general"]),
             injected_context=InjectedContext(),  # 현재는 빈 컨텍스트
-            agent_outputs={response_data.get("type", "general"): response_data.get("response", "")},
+            agent_outputs={agent: response_data.get("response", "") for agent in response_data.get("selected_agents", ["general"])},
             final_response=response_data.get("response", ""),
             execution_time=elapsed_time,
             emotion_detected=False,  # 현재는 감정 분석 결과 없음
@@ -247,30 +266,43 @@ async def get_chat_history(email: str = None, limit: int = 20):
         # 응답 포맷팅
         return {
             "email": email,
-            "messages": chat_history or [],
-            "count": len(chat_history) if chat_history else 0
+            "count": len(chat_history),
+            "chat_history": chat_history
         }
+        
     except Exception as e:
-        logger.error(f"대화 내역 조회 중 오류: {str(e)}")
+        # 오류 로깅
+        logger.error(f"대화 내역 조회 중 오류 발생: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # 오류 응답
         raise HTTPException(status_code=500, detail=f"대화 내역 조회 중 오류 발생: {str(e)}")
 
 # 대화 내역 삭제 엔드포인트
 @app.delete("/chat/history")
-async def clear_chat_history(email: str = None):
+async def delete_chat_history(email: str = None):
     if not email:
         raise HTTPException(status_code=400, detail="이메일 파라미터가 필요합니다")
         
     try:
         # 대화 내역 삭제
-        success = await chat_history_manager.delete_chat_history(email)
+        await chat_history_manager.delete_chat_history(email)
         
-        if success:
-            return {"status": "success", "message": f"사용자 {email}의 대화 내역이 삭제되었습니다"}
-        else:
-            return {"status": "warning", "message": f"사용자 {email}의 대화 내역이 없거나 이미 삭제되었습니다"}
+        # 응답 포맷팅
+        return {
+            "email": email,
+            "status": "success",
+            "message": "대화 내역이 삭제되었습니다"
+        }
+        
     except Exception as e:
-        logger.error(f"대화 내역 삭제 중 오류: {str(e)}")
+        # 오류 로깅
+        logger.error(f"대화 내역 삭제 중 오류 발생: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # 오류 응답
         raise HTTPException(status_code=500, detail=f"대화 내역 삭제 중 오류 발생: {str(e)}")
 
+# 직접 실행 시 서버 구동
 if __name__ == "__main__":
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True) 

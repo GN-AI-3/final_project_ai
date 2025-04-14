@@ -23,6 +23,7 @@ import openai
 from openai import OpenAI
 import schedule
 import time
+import uuid
 
 # 로깅 설정
 logging.basicConfig(
@@ -125,11 +126,61 @@ class DataAnalyzer:
                 password=POSTGRES_PASSWORD
             )
             logger.info("PostgreSQL 연결 성공")
+            
+            # 필요한 테이블 존재 확인 및 생성
+            self.ensure_tables_exist()
+            
             return True
         except Exception as e:
             logger.error(f"PostgreSQL 연결 오류: {str(e)}")
             logger.error(traceback.format_exc())
             return False
+    
+    def ensure_tables_exist(self):
+        """필요한 테이블이 존재하는지 확인하고 없으면 생성"""
+        try:
+            with self.pg_conn.cursor() as cursor:
+                # analysis_results 테이블 존재 확인
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'analysis_results'
+                    );
+                """)
+                table_exists = cursor.fetchone()[0]
+                
+                if not table_exists:
+                    logger.info("analysis_results 테이블이 없어 새로 생성합니다.")
+                    
+                    # analysis_results 테이블 생성
+                    cursor.execute("""
+                        CREATE TABLE analysis_results (
+                            id SERIAL PRIMARY KEY,
+                            user_id INTEGER NOT NULL,
+                            analysis_date DATE NOT NULL,
+                            persona_type VARCHAR(255),
+                            habits JSONB,
+                            interests JSONB,
+                            communication_style VARCHAR(255),
+                            goals JSONB,
+                            challenges JSONB,
+                            persona_summary TEXT,
+                            events JSONB,
+                            top_topics JSONB,
+                            sentiment VARCHAR(50),
+                            events_summary TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE (user_id, analysis_date)
+                        );
+                    """)
+                    
+                    self.pg_conn.commit()
+                    logger.info("analysis_results 테이블 생성 완료")
+        except Exception as e:
+            logger.error(f"테이블 확인/생성 오류: {str(e)}")
+            logger.error(traceback.format_exc())
+            self.pg_conn.rollback()
     
     def close_postgres(self):
         """PostgreSQL 연결 종료"""
@@ -587,6 +638,12 @@ class DataAnalyzer:
         for email, user_messages in grouped_messages.items():
             logger.info(f"사용자 {email} 분석 시작 - {len(user_messages)}개 메시지")
             
+            # 토큰 제한으로 인해 최근 30개 메시지만 사용
+            if len(user_messages) > 30:
+                logger.info(f"메시지가 너무 많아 최근 30개만 분석합니다 (총 {len(user_messages)}개).")
+                # 시간순 정렬 후 최근 30개만 선택
+                user_messages = sorted(user_messages, key=lambda x: x.get("created_at"), reverse=True)[:30]
+            
             # 분석용으로 메시지 포맷팅
             formatted_messages = self.format_messages_for_analysis(user_messages)
             
@@ -596,19 +653,115 @@ class DataAnalyzer:
             # 사건 분석 및 라벨링
             event_analysis = await self.analyze_events(formatted_messages, email)
             
-            # 분석 결과 저장
+            # 분석 결과 저장 - PostgreSQL
             success = await self.store_analysis_results(
                 user_email=email,
                 persona_result=persona_analysis,
                 events_result=event_analysis
             )
             
+            # 분석 결과 저장 - QDrant
+            qdrant_success = await self.store_insights_to_qdrant(
+                user_email=email,
+                persona_result=persona_analysis,
+                events_result=event_analysis
+            )
+            
             if success:
-                logger.info(f"사용자 {email} 분석 결과 저장 완료")
+                logger.info(f"사용자 {email} 분석 결과 PostgreSQL 저장 완료")
             else:
-                logger.error(f"사용자 {email} 분석 결과 저장 실패")
+                logger.error(f"사용자 {email} 분석 결과 PostgreSQL 저장 실패")
+            
+            if qdrant_success:
+                logger.info(f"사용자 {email} 분석 결과 QDrant 저장 완료")
+            else:
+                logger.error(f"사용자 {email} 분석 결과 QDrant 저장 실패")
         
         logger.info(f"{from_date.strftime('%Y-%m-%d')} 데이터 분석 완료")
+    
+    async def store_insights_to_qdrant(self, user_email: str, persona_result: Dict, events_result: Dict) -> bool:
+        """
+        분석 결과를 QDrant에 저장합니다.
+        
+        Args:
+            user_email: 사용자 이메일
+            persona_result: 성향 분석 결과
+            events_result: 사건 분석 결과
+            
+        Returns:
+            bool: 저장 성공 여부
+        """
+        try:
+            # 임베딩 생성을 위한 텍스트
+            persona_text = f"성향: {persona_result.get('persona_type', '')}\n"
+            persona_text += f"요약: {persona_result.get('summary', '')}\n"
+            persona_text += f"관심사: {', '.join(persona_result.get('interests', []))}\n"
+            persona_text += f"목표: {', '.join(persona_result.get('goals', []))}"
+            
+            events_text = f"이벤트: {', '.join([e.get('description', '') for e in events_result.get('events', [])])}\n"
+            events_text += f"주요 주제: {', '.join(events_result.get('top_topics', []))}\n"
+            events_text += f"요약: {events_result.get('summary', '')}"
+            
+            combined_text = f"{persona_text}\n\n{events_text}"
+            
+            # 임베딩 생성
+            embedding = await self.generate_embeddings(combined_text)
+            
+            # 컬렉션 존재 확인
+            collections = self.qdrant_client.get_collections().collections
+            collection_names = [c.name for c in collections]
+            
+            if QDRANT_COLLECTION not in collection_names:
+                logger.info(f"컬렉션 '{QDRANT_COLLECTION}'이 없어 새로 생성합니다.")
+                self.qdrant_client.create_collection(
+                    collection_name=QDRANT_COLLECTION,
+                    vectors_config=models.VectorParams(
+                        size=1536,  # OpenAI 임베딩 차원
+                        distance=models.Distance.COSINE
+                    )
+                )
+                
+                # 컬렉션 스키마 - 필드 인덱싱 설정
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="user_email",
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="timestamp",
+                    field_schema=models.PayloadSchemaType.DATETIME
+                )
+            
+            # Qdrant에 저장
+            timestamp = datetime.now().isoformat()
+            # UUID 사용하여 고유 ID 생성
+            point_id = str(uuid.uuid4())
+            
+            self.qdrant_client.upsert(
+                collection_name=QDRANT_COLLECTION,
+                points=[
+                    models.PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload={
+                            "user_email": user_email,
+                            "timestamp": timestamp,
+                            "persona": persona_result,
+                            "events": events_result,
+                            "combined_text": combined_text
+                        }
+                    )
+                ]
+            )
+            
+            logger.info(f"사용자 '{user_email}'의 분석 결과가 QDrant에 저장되었습니다. (ID: {point_id})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"QDrant 저장 오류: {str(e)}")
+            logger.error(traceback.format_exc())
+            return False
     
     def run_scheduled_analysis(self):
         """매일 자정에 전날 데이터 분석을 실행합니다."""
@@ -620,9 +773,9 @@ class DataAnalyzer:
     def start_scheduler(self):
         """스케줄러를 시작합니다."""
         # 매일 자정에 분석 실행
-        schedule.every().day.at("00:00").do(self.run_scheduled_analysis)
+        schedule.every().day.at("11:20").do(self.run_scheduled_analysis)
         
-        logger.info("스케줄러가 시작되었습니다. 매일 00:00에 분석이 실행됩니다.")
+        logger.info("스케줄러가 시작되었습니다. 매일 11:20에 분석이 실행됩니다.")
         
         while True:
             schedule.run_pending()
