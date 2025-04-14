@@ -5,7 +5,12 @@ Supervisor 모듈 - 호환성 위한 래퍼 모듈
 
 import logging
 import os
-from typing import Dict, Any, List
+import json
+import asyncio
+import uuid
+import traceback
+from typing import Dict, Any, List, Optional, Callable, Coroutine, Tuple
+from datetime import datetime
 
 # 환경변수 설정
 MAX_RESPONSE_LENGTH = 8000
@@ -29,9 +34,10 @@ except ImportError:
 from supervisor_modules.state.state_manager import SupervisorState
 from supervisor_modules.classification.classifier import classify_message
 from supervisor_modules.agents_manager.agents_executor import (
-    execute_agents, route_message, process_message, register_agent, AGENT_CONTEXT_PROMPT
+    execute_agents, route_message, process_message, register_agent
 )
 from supervisor_modules.response.response_generator import generate_response
+from common_prompts.prompts import AGENT_CONTEXT_PROMPT
 
 # 로거 설정
 def setup_logger():

@@ -16,6 +16,7 @@ from langsmith.run_helpers import traceable
 
 from supervisor_modules.state.state_manager import SupervisorState
 from supervisor_modules.classification.classifier import classify_message
+from common_prompts.prompts import AGENT_CONTEXT_PROMPT
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -33,16 +34,6 @@ try:
 except Exception as e:
     logger.warning(f"LangSmith 트레이서 초기화 실패: {str(e)}")
     tracer = None
-
-# 에이전트 프롬프트 템플릿 (대화 맥락 포함)
-AGENT_CONTEXT_PROMPT = """당신은 전문 AI 피트니스 코치입니다. 이전 대화 내용을 고려하여 사용자의 질문에 답변해 주세요.
-
-이전 대화 내역:
-{chat_history}
-
-사용자의 새 질문: {message}
-
-답변 시 이전 대화의 맥락을 고려하여 일관되고 개인화된 답변을 제공하세요."""
 
 # 전역 변수로 agents 선언
 agents = {}
@@ -233,7 +224,7 @@ async def route_message(
         
         # 1. 메시지 분류 및 에이전트 선택
         state_dict = state.to_dict()
-        state_dict = classify_message(state_dict)
+        state_dict = await classify_message(state_dict)
         state = SupervisorState.from_dict(state_dict)
         
         # 2. 선택된 에이전트 실행
@@ -297,20 +288,36 @@ async def process_message(
     message: str,
     email: str = None,
     chat_history: List[Dict[str, str]] = None,
+    context: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
-    사용자 메시지를 처리하여 적절한 에이전트로 라우팅하고 응답을 생성합니다.
+    사용자 메시지를 처리하는 메인 함수.
     
     Args:
         message: 사용자 메시지
         email: 사용자 이메일 (선택 사항)
         chat_history: 채팅 기록 (선택 사항)
+        context: 추가 컨텍스트 정보 (선택 사항)
     
     Returns:
         Dict: 응답 및 메타데이터가 포함된 딕셔너리
     """
-    # route_message 함수를 호출하여 결과 반환
-    return await route_message(message, email, chat_history)
+    try:
+        return await route_message(message, email, chat_history, context)
+    except Exception as e:
+        logger.error(f"메시지 처리 중 오류 발생: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # 오류 발생 시 기본 응답
+        return {
+            "request_id": str(uuid.uuid4()),
+            "response": f"죄송합니다. 메시지를 처리하는 과정에서 오류가 발생했습니다: {str(e)}",
+            "response_type": "error",
+            "categories": [],
+            "selected_agents": [],
+            "metrics": {"error": str(e)},
+            "execution_time": time.time()
+        }
 
 def register_agent(agent_type: str, agent_instance: Any) -> None:
     """

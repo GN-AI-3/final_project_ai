@@ -4,9 +4,11 @@ Supervisor 모듈
 """
 
 from supervisor_modules.classification.classifier import classify_message
-from supervisor_modules.agents_manager.agents_executor import execute_agents, route_message, process_message, register_agent, AGENT_CONTEXT_PROMPT
+from supervisor_modules.agents_manager.agents_executor import execute_agents, route_message, process_message, register_agent
 from supervisor_modules.state.state_manager import SupervisorState
-from supervisor_modules.response.response_generator import generate_response
+from supervisor_modules.response.response_generator import generate_response, generate_response_with_insights, generate_response_with_semantic_search
+from common_prompts.prompts import AGENT_CONTEXT_PROMPT, QDRANT_INSIGHTS_PROMPT, QDRANT_SEARCH_PROMPT, CATEGORY_CONTEXT_PROMPT
+from supervisor_modules.utils.qdrant_helper import get_user_insights, search_relevant_conversations
 
 __all__ = [
     'classify_message',
@@ -15,6 +17,13 @@ __all__ = [
     'process_message',
     'register_agent',
     'AGENT_CONTEXT_PROMPT',
+    'QDRANT_INSIGHTS_PROMPT',
+    'QDRANT_SEARCH_PROMPT',
+    'CATEGORY_CONTEXT_PROMPT',
     'SupervisorState',
-    'generate_response'
+    'generate_response',
+    'generate_response_with_insights',
+    'generate_response_with_semantic_search',
+    'get_user_insights',
+    'search_relevant_conversations'
 ] 

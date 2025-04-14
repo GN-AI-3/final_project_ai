@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional
 from ..base_agent import BaseAgent
 from langchain.prompts import ChatPromptTemplate
+from common_prompts.prompts import AGENT_CONTEXT_PROMPT
 
 class GeneralAgent(BaseAgent):
     async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -25,24 +26,27 @@ class GeneralAgent(BaseAgent):
                 content = entry.get("content", "")
                 formatted_history += f"{role}: {content}\n"
         
-        # 대화 내역이 있는 경우와 없는 경우에 따라 다른 프롬프트 사용
+        # 대화 내역이 있는 경우 AGENT_CONTEXT_PROMPT 사용
         if formatted_history:
+            system_prompt = AGENT_CONTEXT_PROMPT
             prompt = ChatPromptTemplate.from_messages([
-                ("system", """당신은 사용자와 일상 대화를 나누는 AI 어시스턴트입니다. 
-이전 대화 내용을 참고하여 사용자의 질문에 적절히 답변하세요.
-특히 사용자가 이전에 언급한 내용(옷, 음식, 활동 등)을 기억하고 참조해야 합니다.
-사용자가 이전 대화 내용에 대해 물어본다면 정확하게 답변해 주세요."""),
-                ("human", f"""이전 대화 내역:
-{formatted_history}
-
-현재 질문: {message}""")
+                ("system", system_prompt),
+                ("human", message)
             ])
+            
+            # 프롬프트에 필요한 변수 설정
+            variables = {
+                "message": message,
+                "chat_history": formatted_history
+            }
         else:
+            # 대화 내역이 없는 경우 간단한 프롬프트 사용
             prompt = ChatPromptTemplate.from_messages([
                 ("system", "당신은 일반적인 대화를 나눌 수 있는 AI 어시스턴트입니다."),
                 ("human", "{message}")
             ])
+            variables = {"message": message}
             
         chain = prompt | self.model
-        response = await chain.ainvoke({"message": message})
+        response = await chain.ainvoke(variables)
         return {"type": "general", "response": response.content} 

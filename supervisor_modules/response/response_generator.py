@@ -1,21 +1,28 @@
 """
 응답 생성 모듈
-에이전트 결과를 바탕으로 응답을 생성합니다.
+에이전트 결과를 기반으로 최종 응답을 생성하는 기능을 제공합니다.
 """
 
 import time
 import traceback
 import logging
 import os
-from typing import Dict, Any, List
-from contextlib import nullcontext
+from typing import Dict, Any, List, Optional
 
+from langchain_openai import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
 from langsmith.run_helpers import traceable
 
+from supervisor_modules.utils.logger_setup import get_logger
+from supervisor_modules.utils.qdrant_helper import get_user_insights, search_relevant_conversations
+from common_prompts.prompts import AGENT_CONTEXT_PROMPT, QDRANT_INSIGHTS_PROMPT, QDRANT_SEARCH_PROMPT
 from supervisor_modules.state.state_manager import SupervisorState
 
 # 로거 설정
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+# 최대 응답 길이 설정
+MAX_RESPONSE_LENGTH = 8000
 
 # LangSmith 설정
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -30,9 +37,6 @@ try:
 except Exception as e:
     logger.warning(f"LangSmith 트레이서 초기화 실패: {str(e)}")
     tracer = None
-
-# 최대 응답 길이 설정
-MAX_RESPONSE_LENGTH = 8000
 
 async def generate_response(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -106,6 +110,150 @@ async def generate_response(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     
     # 상태 객체를 딕셔너리로 변환하여 반환
     return state.to_dict()
+
+@traceable(name="generate_response_with_insights")
+async def generate_response_with_insights(agent_results: List[Dict[str, Any]], state: Dict[str, Any], message: str, email: Optional[str] = None) -> str:
+    """
+    QDrant에서 가져온 사용자 인사이트를 활용하여 응답을 생성합니다.
+    
+    Args:
+        agent_results: 에이전트 응답 결과 목록
+        state: 현재 상태 정보
+        message: 사용자 메시지
+        email: 사용자 이메일
+        
+    Returns:
+        str: 인사이트를 활용한 최종 응답
+    """
+    try:
+        # 기본 검사
+        if not agent_results or len(agent_results) == 0:
+            logger.warning("에이전트 결과가 없습니다. 기본 응답을 생성합니다.")
+            return "죄송합니다, 현재 질문에 대한 답변을 생성할 수 없습니다. 다시 질문해 주세요."
+            
+        # 이메일이 없는 경우 기본 응답 생성
+        if not email:
+            logger.info("사용자 이메일이 없습니다. 기본 응답 생성기를 사용합니다.")
+            combined_response = combine_results_to_string(agent_results)
+            return combined_response
+            
+        # 인사이트 정보 가져오기
+        user_insights_data = await get_user_insights(email)
+        
+        # 에이전트 응답 합치기
+        agent_combined_response = combine_results_to_string(agent_results)
+        
+        # 대화 내역 포맷팅
+        chat_history = state.get("chat_history", [])
+        formatted_history = format_chat_history(chat_history)
+                
+        # 모델 및 프롬프트 설정
+        model = ChatOpenAI(
+            model_name="gpt-4o",
+            temperature=0.7
+        )
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", QDRANT_INSIGHTS_PROMPT),
+            ("human", message)
+        ])
+        
+        # 변수 설정
+        variables = {
+            "message": message,
+            "user_insights": user_insights_data.get("user_insights", "특별한 인사이트 정보가 없습니다."),
+            "recent_events": user_insights_data.get("recent_events", "최근 특별한 이벤트가 없습니다."),
+            "user_persona": user_insights_data.get("user_persona", "사용자 페르소나 정보가 없습니다."),
+            "chat_history": formatted_history,
+            "agent_response": agent_combined_response
+        }
+        
+        # 응답 생성
+        chain = prompt | model
+        response = await chain.ainvoke(variables)
+        
+        final_response = response.content
+        if len(final_response) > MAX_RESPONSE_LENGTH:
+            final_response = final_response[:MAX_RESPONSE_LENGTH] + "..."
+            
+        return final_response
+        
+    except Exception as e:
+        logger.error(f"인사이트 기반 응답 생성 중 오류 발생: {str(e)}")
+        logger.error(traceback.format_exc())
+        # 오류 발생 시 기본 응답으로 에이전트 결과 사용
+        return combine_results_to_string(agent_results)
+
+@traceable(name="generate_response_with_semantic_search")
+async def generate_response_with_semantic_search(agent_results: List[Dict[str, Any]], state: Dict[str, Any], message: str, email: Optional[str] = None) -> str:
+    """
+    QDrant 의미 검색을 활용하여 관련 과거 대화를 포함한 응답을 생성합니다.
+    
+    Args:
+        agent_results: 에이전트 응답 결과 목록
+        state: 현재 상태 정보
+        message: 사용자 메시지
+        email: 사용자 이메일
+        
+    Returns:
+        str: 의미 검색 결과를 활용한 최종 응답
+    """
+    try:
+        # 기본 검사
+        if not agent_results or len(agent_results) == 0:
+            logger.warning("에이전트 결과가 없습니다. 기본 응답을 생성합니다.")
+            return "죄송합니다, 현재 질문에 대한 답변을 생성할 수 없습니다. 다시 질문해 주세요."
+            
+        # 이메일이 없는 경우 기본 응답 생성
+        if not email:
+            logger.info("사용자 이메일이 없습니다. 기본 응답 생성기를 사용합니다.")
+            combined_response = combine_results_to_string(agent_results)
+            return combined_response
+            
+        # 관련 대화 검색
+        relevant_conversations = await search_relevant_conversations(email, message)
+        
+        # 에이전트 응답 합치기
+        agent_combined_response = combine_results_to_string(agent_results)
+        
+        # 대화 내역 포맷팅
+        chat_history = state.get("chat_history", [])
+        formatted_history = format_chat_history(chat_history)
+                
+        # 모델 및 프롬프트 설정
+        model = ChatOpenAI(
+            model_name="gpt-4o",
+            temperature=0.7
+        )
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", QDRANT_SEARCH_PROMPT),
+            ("human", message)
+        ])
+        
+        # 변수 설정
+        variables = {
+            "message": message,
+            "relevant_conversations": relevant_conversations,
+            "chat_history": formatted_history,
+            "agent_response": agent_combined_response
+        }
+        
+        # 응답 생성
+        chain = prompt | model
+        response = await chain.ainvoke(variables)
+        
+        final_response = response.content
+        if len(final_response) > MAX_RESPONSE_LENGTH:
+            final_response = final_response[:MAX_RESPONSE_LENGTH] + "..."
+            
+        return final_response
+        
+    except Exception as e:
+        logger.error(f"의미 검색 기반 응답 생성 중 오류 발생: {str(e)}")
+        logger.error(traceback.format_exc())
+        # 오류 발생 시 기본 응답으로 에이전트 결과 사용
+        return combine_results_to_string(agent_results)
 
 def extract_agent_content(agent_result: Any) -> str:
     """
@@ -209,4 +357,72 @@ def combine_agent_responses(valid_results: List[Dict[str, Any]], categories: Lis
     # 우선순위에 없는 경우 첫 번째 결과 반환
     first_agent = list(category_results.keys())[0]
     logger.info(f"[{request_id}] 우선순위에 없는 에이전트 - 첫 번째 '{first_agent}' 응답 선택")
-    return category_results[first_agent] 
+    return category_results[first_agent]
+
+def combine_results_to_string(agent_results: List[Dict[str, Any]]) -> str:
+    """
+    에이전트 결과 목록을 단일 문자열로 결합합니다.
+    
+    Args:
+        agent_results: 에이전트 응답 결과 목록
+        
+    Returns:
+        str: 결합된 응답 문자열
+    """
+    if not agent_results:
+        return "응답을 생성할 수 없습니다."
+        
+    if len(agent_results) == 1:
+        # 단일 결과인 경우
+        result = agent_results[0].get("result", {})
+        if isinstance(result, dict) and "response" in result:
+            return result["response"]
+        if isinstance(result, str):
+            return result
+        return str(result)
+    
+    # 여러 결과가 있는 경우
+    responses = []
+    for result in agent_results:
+        if "agent" in result and "result" in result:
+            agent_name = result["agent"]
+            content = None
+            
+            if isinstance(result["result"], dict) and "response" in result["result"]:
+                content = result["result"]["response"]
+            elif isinstance(result["result"], str):
+                content = result["result"]
+            else:
+                content = str(result["result"])
+                
+            if content:
+                responses.append(f"【{agent_name}】\n{content}")
+    
+    if not responses:
+        return "응답을 생성할 수 없습니다."
+        
+    return "\n\n".join(responses)
+
+def format_chat_history(chat_history: List[Dict[str, Any]]) -> str:
+    """
+    채팅 내역을 포맷팅합니다.
+    
+    Args:
+        chat_history: 채팅 내역 목록
+        
+    Returns:
+        str: 포맷팅된 채팅 내역
+    """
+    if not chat_history:
+        return ""
+        
+    formatted_history = ""
+    # 최대 5개의 최신 메시지만 사용
+    recent_history = chat_history[-5:] if len(chat_history) > 5 else chat_history
+    
+    for entry in recent_history:
+        role = "사용자" if entry.get("role", "") == "user" else "AI"
+        content = entry.get("content", "")
+        formatted_history += f"{role}: {content}\n"
+        
+    return formatted_history 
