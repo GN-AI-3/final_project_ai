@@ -161,16 +161,11 @@ async def run_agent(request_id: str, agent_name: str, agent: Any, message: str, 
     try:
         logger.info(f"[{request_id}] 에이전트 '{agent_name}' 실행 중")
         
-        # LangSmith 런 이름 설정
-        run_name = f"에이전트 실행: {agent_name} - {message[:30]}..."
-        
-        # LangSmith 트레이서를 사용한 에이전트 실행
-        with tracer.new_trace(name=run_name, run_type="chain") if tracer else nullcontext():
-            # 에이전트 실행
-            agent_result = await agent.process(
-                message=message,
-                chat_history=chat_history
-            )
+        # 에이전트 실행
+        agent_result = await agent.process(
+            message=message,
+            chat_history=chat_history
+        )
         
         execution_time = time.time() - agent_start_time
         

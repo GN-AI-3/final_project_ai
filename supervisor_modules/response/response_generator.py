@@ -58,39 +58,34 @@ async def generate_response(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     try:
         logger.info(f"[{request_id}] 응답 생성 시작 - 에이전트 결과 {len(agent_results)}개")
         
-        # LangSmith 런 이름 설정
-        run_name = f"응답 생성: {request_id}"
+        if not agent_results:
+            raise ValueError("에이전트 결과가 없습니다.")
         
-        # LangSmith 트레이서를 사용한 응답 생성
-        with tracer.new_trace(name=run_name, run_type="chain") if tracer else nullcontext():
-            if not agent_results:
-                raise ValueError("에이전트 결과가 없습니다.")
-            
-            # 유효한 결과만 추출
-            valid_results = []
-            for result in agent_results:
-                if "error" not in result:
-                    valid_results.append(result)
-            
-            if not valid_results:
-                raise ValueError("유효한 에이전트 결과가 없습니다.")
-            
-            logger.info(f"[{request_id}] 유효한 에이전트 결과 {len(valid_results)}개")
-            
-            # 응답 결합
-            if len(valid_results) == 1:
-                # 단일 에이전트 결과
-                combined_result = extract_agent_content(valid_results[0]["result"])
-                logger.info(f"[{request_id}] 단일 에이전트 응답 사용")
-            else:
-                # 여러 에이전트 결과 결합
-                combined_result = combine_agent_responses(valid_results, categories, request_id)
-                logger.info(f"[{request_id}] 다중 에이전트 응답 결합")
-            
-            # 응답 형식화
-            response = combined_result
-            if len(response) > MAX_RESPONSE_LENGTH:
-                response = response[:MAX_RESPONSE_LENGTH] + "..."
+        # 유효한 결과만 추출
+        valid_results = []
+        for result in agent_results:
+            if "error" not in result:
+                valid_results.append(result)
+        
+        if not valid_results:
+            raise ValueError("유효한 에이전트 결과가 없습니다.")
+        
+        logger.info(f"[{request_id}] 유효한 에이전트 결과 {len(valid_results)}개")
+        
+        # 응답 결합
+        if len(valid_results) == 1:
+            # 단일 에이전트 결과
+            combined_result = extract_agent_content(valid_results[0]["result"])
+            logger.info(f"[{request_id}] 단일 에이전트 응답 사용")
+        else:
+            # 여러 에이전트 결과 결합
+            combined_result = combine_agent_responses(valid_results, categories, request_id)
+            logger.info(f"[{request_id}] 다중 에이전트 응답 결합")
+        
+        # 응답 형식화
+        response = combined_result
+        if len(response) > MAX_RESPONSE_LENGTH:
+            response = response[:MAX_RESPONSE_LENGTH] + "..."
         
         # 상태 업데이트
         state.response = response
@@ -125,20 +120,51 @@ def extract_agent_content(agent_result: Any) -> str:
     if agent_result is None:
         return "응답이 없습니다."
     
+    # 직접 "action_plan" 문자열이 반환되는 경우 처리
+    if agent_result == "action_plan" or agent_result == "steps" or agent_result == "actions":
+        return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
+    
     if isinstance(agent_result, str):
+        # 문자열이 'action_plan'이거나 'steps' 같은 중간 계획인 경우 대체 메시지 반환
+        if agent_result in ["action_plan", "steps"]:
+            return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
         return agent_result
     
     if isinstance(agent_result, dict):
+        # exercise 에이전트 응답 처리
+        if "type" in agent_result and agent_result["type"] == "exercise" and "response" in agent_result:
+            # response가 "action_plan"인 경우 처리
+            if agent_result["response"] == "action_plan" or agent_result["response"] == "steps" or agent_result["response"] == "actions":
+                return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
+            return agent_result["response"]
+        
+        # 특정 패턴 확인 - action_plan이나 steps 같은 중간 계획 데이터가 있는지 확인
+        if "action_plan" in agent_result or "steps" in agent_result or "actions" in agent_result:
+            if "final_response" in agent_result and agent_result["final_response"]:
+                return agent_result["final_response"]
+            if "result" in agent_result and agent_result["result"]:
+                return agent_result["result"]
+            return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
+        
         # 가능한 키 목록 순서대로 시도
-        for key in ["content", "response", "answer", "output", "text", "message"]:
+        for key in ["content", "response", "answer", "output", "text", "message", "final_response", "result"]:
             if key in agent_result and agent_result[key] is not None:
                 if isinstance(agent_result[key], str):
+                    # 키 값이 'action_plan'이나 'steps' 같은 중간 계획인 경우 건너뛰기
+                    if agent_result[key] in ["action_plan", "steps", "actions"]:
+                        continue
                     return agent_result[key]
                 else:
                     return str(agent_result[key])
         
         # 알려진 키가 없는 경우 전체 딕셔너리 반환
         return str(agent_result)
+    
+    # 리스트인 경우 action_plan이나 단계 정보일 수 있음
+    if isinstance(agent_result, list) and len(agent_result) > 0:
+        # 리스트의 첫 번째 항목에 'description', 'tool', 'input' 필드가 있으면 action_plan으로 간주
+        if isinstance(agent_result[0], dict) and all(k in agent_result[0] for k in ["description", "tool"]):
+            return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
     
     # 기타 타입
     return str(agent_result)

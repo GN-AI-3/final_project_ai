@@ -773,9 +773,9 @@ class DataAnalyzer:
     def start_scheduler(self):
         """스케줄러를 시작합니다."""
         # 매일 자정에 분석 실행
-        schedule.every().day.at("11:20").do(self.run_scheduled_analysis)
+        schedule.every().day.at("11:46").do(self.run_scheduled_analysis)
         
-        logger.info("스케줄러가 시작되었습니다. 매일 11:20에 분석이 실행됩니다.")
+        logger.info("스케줄러가 시작되었습니다. 매일 11:46에 분석이 실행됩니다.")
         
         while True:
             schedule.run_pending()
