@@ -1,5 +1,5 @@
 from datetime import datetime
-from core.database import execute_query
+from ..core.database import execute_query
 
 def check_same_day(start_dt: datetime) -> str:
     """당일 예약 여부를 확인합니다."""

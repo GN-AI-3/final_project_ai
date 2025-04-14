@@ -1,12 +1,12 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import json
 
 from langchain.agents import tool
 
-from core.database import execute_query
-from utils.date_utils import validate_date_format
-from utils.schedule_validator import (
+from ..core.database import execute_query
+from ..utils.date_utils import validate_date_format
+from ..utils.schedule_validator import (
     check_same_day,
     check_future_date,
     check_existing_schedule
@@ -25,7 +25,6 @@ def get_user_schedule(input: str = "") -> str:
         str: 스케줄 목록 또는 에러 메시지
     """
     try:
-        
         query = f"""
         SELECT start_time, reservation_id
         FROM pt_schedule
@@ -37,14 +36,12 @@ def get_user_schedule(input: str = "") -> str:
         
         results = execute_query(query)
         
-        # 결과가 문자열인 경우 에러 메시지 반환
         if isinstance(results, str):
             return json.dumps({
                 "success": False,
                 "error": results
             }, ensure_ascii=False)
             
-        # 결과가 리스트인 경우 JSON 형식으로 변환
         if isinstance(results, list):
             schedules = []
             for result in results:
@@ -62,7 +59,8 @@ def get_user_schedule(input: str = "") -> str:
             
             response = {
                 "success": True,
-                "schedules": schedules
+                "schedules": schedules,
+                "total_count": len(schedules)
             }
             return json.dumps(response, ensure_ascii=False)
         

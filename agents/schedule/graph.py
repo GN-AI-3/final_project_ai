@@ -3,8 +3,9 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_teddynote.graphs import visualize_graph
 
-from core.state import State, should_continue
-from core.nodes import ai_assistant_node, user_node
+from .core.state import State, should_continue
+from .core.nodes import create_ai_assistant_node, user_node
+from .chatbot import call_chatbot
 
 
 def build_graph():
@@ -15,9 +16,10 @@ def build_graph():
     """
     graph_builder = StateGraph(State)
 
-    # 노드 추가
+    # 노드 추가 (의존성 주입)
+    ai_node = create_ai_assistant_node(call_chatbot)
     graph_builder.add_node("사용자", user_node)
-    graph_builder.add_node("예약 도우미", ai_assistant_node)
+    graph_builder.add_node("예약 도우미", ai_node)
 
     # 엣지 정의
     graph_builder.add_edge("예약 도우미", "사용자")

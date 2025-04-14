@@ -1,5 +1,6 @@
+import psycopg2
 from langchain_community.utilities import SQLDatabase
-from config.database_config import PG_URI
+from ..config.database_config import PG_URI
 
 # 데이터베이스 연결
 db = SQLDatabase.from_uri(PG_URI)
