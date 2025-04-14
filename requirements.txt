@@ -1,6 +1,6 @@
 langchain==0.3.21
 tavily-python==0.5.1
-psycopg2==2.9.10
+psycopg2-binary==2.9.10
 langchain-openai==0.3.10
 python-dotenv==1.1.0
 langgraph==0.3.20
@@ -9,5 +9,8 @@ sentence-transformers==4.0.1
 qdrant-client==1.13.3
 matplotlib==3.10.1
 langchain-community==0.3.20
+uvicorn==0.34.0
+elasticsearch==8.17.2
+fastapi==0.115.12
 # langchain_teddynote
 schedule>=1.2.0
