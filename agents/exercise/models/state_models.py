@@ -3,7 +3,9 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 class RoutingState(BaseModel):
-    user_id: str = "1"
+    member_id: int = None
+    trainer_id: int = None
+    user_type: str = "member"
     message: str
     plan: Optional[str] = None
     context: Optional[List[Any]] = None

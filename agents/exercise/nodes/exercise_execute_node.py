@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 import json
-from ..tools.exercise_routine_tools import master_select_db_multi, web_search, search_exercise_by_name, retrieve_exercise_info_by_similarity
+from ..tools.exercise_member_tools import master_select_db_multi, web_search, search_exercise_by_name, retrieve_exercise_info_by_similarity
 from ..models.state_models import RoutingState
 import re
 
@@ -50,6 +50,7 @@ def replace_with_context(text, context):
 # ----------------------------
 def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     message = state.message
+    user_type = state.user_type
 
     try:
         plan = json.loads(state.plan)
@@ -59,12 +60,24 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     context = state.context or []
     results = []
 
-    tools = {
+    tools_for_member = {
         "web_search": web_search,
         "master_select_db_multi": master_select_db_multi,
         "search_exercise_by_name": search_exercise_by_name,
         "retrieve_exercise_info_by_similarity": retrieve_exercise_info_by_similarity
     }
+
+    tools_for_trainer = {
+        "web_search": web_search,
+        "master_select_db_multi": master_select_db_multi,
+        "search_exercise_by_name": search_exercise_by_name,
+        "retrieve_exercise_info_by_similarity": retrieve_exercise_info_by_similarity
+    }
+
+    if user_type == "member":
+        tools = tools_for_member
+    elif user_type == "trainer":
+        tools = tools_for_trainer
 
     for idx, step in enumerate(plan):
         tool_name = step.get("tool")
@@ -87,6 +100,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
             print("result: ", result)
         else:
             tool_func = tools.get(tool_name)
+
             if not tool_func:
                 result = f"[ERROR] 등록되지 않은 tool: {tool_name}"
                 print("result: ", result)

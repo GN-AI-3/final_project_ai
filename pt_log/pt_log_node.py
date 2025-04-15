@@ -1,0 +1,56 @@
+from langchain.tools import StructuredTool
+from ..models.input_models import EmptyArgs
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
+from ..models.state_models import RoutingState
+from langchain.tools import Tool
+from ..pt_log.pt_log_prompt import PT_LOG_PROMPT
+import json
+
+tools = [
+    Tool(
+        name="submit_workout_log",
+        func=submit_workout_log,
+        description=(
+            "PT 운동 세션에 대한 피드백과 기록을 서버에 저장하는 기능. "
+            "사용자의 메시지를 기반으로 다음 정보를 추출해서 호출해야 한다:\n"
+            "- ptScheduleId (필수, 현재 세션 ID)\n"
+            "- feedback (세션 전체에 대한 소감)\n"
+            "- injuryCheck (부상 유무: True/False)\n"
+            "- nextPlan (다음 세션 요청사항)\n"
+            "- exercises (각 운동의 세트 수, 반복 횟수, 무게, 휴식 시간, 피드백 포함한 리스트)"
+        )
+    )
+]
+
+def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
+    """PT 일지 기록 노드"""
+
+    message = state.message
+    ptScheduleId = state.ptScheduleId
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", PT_LOG_PROMPT),
+        ("user", "{message}"),
+        ("user", "{ptScheduleId}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad")
+    ])
+
+    agent = create_tool_calling_agent(llm, tools, prompt)
+
+    agent_executor = AgentExecutor(
+        agent=agent,
+        verbose=True,
+        tools=tools,
+        handle_parse_errors=True,
+    )
+
+    response = agent_executor.invoke({
+        "message": message,
+        "ptScheduleId": ptScheduleId,
+    })
+
+    print("pt log response: ", response["output"])
+    state.plan = response["output"]
+    return state
