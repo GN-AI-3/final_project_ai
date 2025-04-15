@@ -1,5 +1,4 @@
 import csv
-import os
 
 def remove_duplicates():
     # 원본 파일 읽기

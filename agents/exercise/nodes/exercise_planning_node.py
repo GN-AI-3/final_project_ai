@@ -1,12 +1,8 @@
-from langchain.tools import StructuredTool
-from ..models.input_models import EmptyArgs
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from ..models.state_models import RoutingState
-from langchain.tools import Tool
-from ..tools.exercise_member_tools import master_select_db_multi, web_search
-from ..prompts.exercise_planning_prompts import EXERCISE_PLANNING_PROMPT, EXERCISE_PLANNING_PROMPT_2, EXERCISE_PLANNING_PROMPT_3, EXERCISE_PLANNING_PROMPT_4
+from ..prompts.exercise_planning_prompts import EXERCISE_PLANNING_PROMPT_4
 import json
 
 TABLE_SCHEMA_FOR_MEMBER = {
@@ -133,6 +129,7 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     message = state.message
     feedback = state.feedback
     member_id = state.member_id
+    trainer_id = state.trainer_id
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", EXERCISE_PLANNING_PROMPT_4),
