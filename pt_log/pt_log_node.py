@@ -6,6 +6,7 @@ from langchain.tools import Tool
 from pt_log.pt_log_prompt import PT_LOG_PROMPT
 from pt_log.pt_log_tool import submit_workout_log
 from pt_log.pt_log_model import ptLogState
+from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
 import json
 
 tools = [
@@ -19,7 +20,14 @@ tools = [
             "- feedback (세션 전체에 대한 소감)\n"
             "- injuryCheck (부상 유무: True/False)\n"
             "- nextPlan (다음 세션 요청사항)\n"
-            "- exercises (각 운동의 세트 수, 반복 횟수, 무게, 휴식 시간, 피드백 포함한 리스트)"
+            "- exercises (각 운동의 세트 수, 반복 횟수, 무게, 휴식 시간, 피드백 포함한 리스트) - 반드시 운동 이름을 검색하여 exercise_id를 조회해야 한다. exercise_id는 무조건 숫자로 올 수 있다."
+        )
+    ),
+    Tool(
+        name="search_exercise_by_name",
+        func=search_exercise_by_name,
+        description=(
+            "운동 이름을 검색하여 exercise_id를 조회한다. 검색어는 한국어만 올 수 있다."
         )
     )
 ]

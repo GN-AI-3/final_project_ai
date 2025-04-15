@@ -4,5 +4,5 @@ from typing import Optional, List
 
 class ptLogState(BaseModel):
     message: str
-    ptScheduleId: int = None
+    ptScheduleId: int = 309
     plan: str = None
