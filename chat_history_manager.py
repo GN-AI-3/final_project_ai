@@ -1,5 +1,5 @@
 import redis
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 import logging
 from datetime import datetime
@@ -169,8 +169,16 @@ class ChatHistoryManager:
         logger.info(f"[AI 메시지 저장] 이메일: {email}, 길이: {len(message)}")
         self._add_message(email, "ai", message)
     
-    def _add_message(self, email: str, role: str, message: str) -> None:
-        """Add a message to the user's chat history"""
+    def _add_message(self, email: str, role: str, message: str, additional_data: Dict[str, Any] = None) -> None:
+        """
+        Add a message to the user's chat history
+        
+        Args:
+            email: User email
+            role: Message role ('user' or 'ai')
+            message: Message content
+            additional_data: Additional data to store with the message
+        """
         try:
             # 메시지 데이터 생성
             message_data = {
@@ -178,6 +186,10 @@ class ChatHistoryManager:
                 "content": message,
                 "timestamp": datetime.now().isoformat()
             }
+            
+            # 추가 데이터가 있으면 병합
+            if additional_data:
+                message_data.update(additional_data)
             
             if self.use_redis and self.redis_client:
                 # Redis 저장
@@ -308,7 +320,7 @@ class ChatHistoryManager:
             logger.error(f"Error formatting chat history: {str(e)}")
             return []
             
-    async def get_chat_history(self, email: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def get_chat_history(self, email: str, limit: int = 20, user_type: str = None) -> List[Dict[str, Any]]:
         """
         Get chat history for a user.
         This is an async wrapper for get_recent_messages to support async calls.
@@ -316,11 +328,12 @@ class ChatHistoryManager:
         Args:
             email: User email
             limit: Maximum number of messages to return
+            user_type: Type of user ('member' or 'trainer')
             
         Returns:
             List of chat messages in chronological order
         """
-        logger.info(f"[대화 내역 조회 요청] 이메일: {email}, 최대 개수: {limit}")
+        logger.info(f"[대화 내역 조회 요청] 이메일: {email}, 최대 개수: {limit}, 사용자 타입: {user_type}")
         
         # 기본 목록 얻기
         messages = self.get_recent_messages(email, limit)
@@ -378,47 +391,73 @@ class ChatHistoryManager:
             stats["error"] = str(e)
             return stats
     
-    async def delete_chat_history(self, email: str) -> bool:
+    async def delete_chat_history(self, email: str, user_type: str = None) -> bool:
         """
         Delete chat history for a user.
         This is an async wrapper for clear_history to support async calls.
         
         Args:
             email: User email
+            user_type: Type of user ('member' or 'trainer')
             
         Returns:
             True if successful, False otherwise
         """
-        logger.info(f"[대화 내역 삭제 요청] 이메일: {email}")
+        logger.info(f"[대화 내역 삭제 요청] 이메일: {email}, 사용자 타입: {user_type}")
         return self.clear_history(email)
     
-    async def add_chat_entry(self, email: str, role: str, content: str, timestamp=None) -> bool:
+    def add_chat_entry(self, email: str, message: str, is_user: bool = True, additional_data: Dict[str, Any] = None) -> bool:
         """
-        Add a chat entry to the user's chat history.
-        This is an async wrapper for add_message to support async calls.
+        Add a message to the chat history
         
         Args:
             email: User email
-            role: Message role ('user' or 'assistant')
-            content: Message content
-            timestamp: Message timestamp
+            message: Message content
+            is_user: True if the message is from the user, False if from the assistant
+            additional_data: Additional data to store with the message
             
         Returns:
-            True if successful, False otherwise
+            bool: True if successful, False otherwise
         """
-        if role == "assistant":
-            role = "ai"
+        try:
+            role = "user" if is_user else "ai"
+            self._add_message(email, role, message, additional_data)
+            return True
+        except Exception as e:
+            logger.error(f"[채팅 기록 추가 오류] 이메일: {email}, 메시지: {message[:30]}..., 오류: {str(e)}")
+            return False
             
-        self._add_message(email, role, content)
-        return True
+    async def add_chat_entry_async(self, email: str, role: str, message: str, additional_data: Dict[str, Any] = None) -> bool:
+        """
+        비동기로 메시지를 대화 내역에 추가합니다.
+        
+        Args:
+            email: 사용자 이메일
+            role: 메시지 역할 ('user' 또는 'assistant')
+            message: 메시지 내용
+            additional_data: 메시지와 함께 저장할 추가 데이터
             
-    async def save_chat_history(self, email: str, chat_history: List[Dict[str, Any]]) -> None:
+        Returns:
+            bool: 성공 시 True, 실패 시 False
+        """
+        try:
+            role_normalized = "user" if role == "user" else "ai"
+            self._add_message(email, role_normalized, message, additional_data)
+            return True
+        except Exception as e:
+            logger.error(f"[채팅 기록 비동기 추가 오류] 이메일: {email}, 역할: {role}, 오류: {str(e)}")
+            return False
+            
+    async def save_chat_history(self, email: str, chat_history: List[Dict[str, Any]]) -> bool:
         """
         Save the entire chat history for a user. This overwrites the existing history.
         
         Args:
             email: User email
             chat_history: List of chat messages with role and content
+            
+        Returns:
+            bool: True if successful, False otherwise
         """
         logger.info(f"[채팅 내역 저장] 이메일: {email}, 메시지 수: {len(chat_history)}")
         
@@ -435,8 +474,10 @@ class ChatHistoryManager:
                 self._add_message(email, role, content)
                 
             logger.info(f"[채팅 내역 저장 완료] 이메일: {email}")
+            return True
                 
         except Exception as e:
             logger.error(f"[채팅 내역 저장 오류] 이메일: {email}, 오류: {str(e)}")
             import traceback
-            logger.error(traceback.format_exc()) 
+            logger.error(traceback.format_exc())
+            return False 

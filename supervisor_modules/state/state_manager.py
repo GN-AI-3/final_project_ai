@@ -23,6 +23,7 @@ class SupervisorStateDict(TypedDict, total=False):
     metrics: Dict[str, Any]
     used_nodes: List[str]
     start_time: float
+    context_info: Dict[str, str]
 
 class SupervisorState:
     """LangGraph 워크플로우의 상태를 관리하는 클래스"""
@@ -74,6 +75,9 @@ class SupervisorState:
         # 추가 컨텍스트 정보
         self.context = context or {}
         
+        # 카테고리별 문맥 정보
+        self.context_info = {}
+        
         # 사용된 노드 추적
         self.used_nodes = []
     
@@ -105,6 +109,7 @@ class SupervisorState:
             "error": self.error,
             "metrics": self.metrics,
             "context": self.context,
+            "context_info": getattr(self, "context_info", {}),
             "used_nodes": self.used_nodes
         }
     

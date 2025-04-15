@@ -49,13 +49,6 @@ supervisor = Supervisor(model=llm)
 # 에이전트 임포트
 from agents import ExerciseAgent, FoodAgent, ScheduleAgent, MotivationAgent, GeneralAgent
 
-# 에이전트 등록
-supervisor.register_agent("exercise", ExerciseAgent(llm))
-supervisor.register_agent("food", FoodAgent(llm))
-supervisor.register_agent("schedule", ScheduleAgent(llm))
-supervisor.register_agent("motivation", MotivationAgent(llm))
-supervisor.register_agent("general", GeneralAgent(llm))
-
 # 유틸리티 함수: JSON 데이터를 보기 좋게 출력
 def log_pretty_json(prefix, data):
     """JSON 데이터를 보기 좋게 포맷팅하여 콘솔에 출력"""
@@ -110,7 +103,9 @@ def _extract_agent_content(output: Any) -> str:
 # 모델 정의
 class ChatRequest(BaseModel):
     message: str
-    email: Optional[str] = None
+    member_id: Optional[str] = None
+    trainer_id: Optional[str] = None
+    user_type: Optional[str] = None
 
 class AgentOutput(BaseModel):
     content: str
@@ -124,7 +119,9 @@ class InjectedContext(BaseModel):
     emotion_score: Optional[float] = None
     
 class ChatResponse(BaseModel):
-    member_id: str
+    member_id: Optional[str] = None
+    trainer_id: Optional[str] = None
+    user_type: str = "member"  # 'member' 또는 'trainer'
     timestamp: str
     member_input: str
     clarified_input: Optional[str] = None
@@ -172,16 +169,26 @@ async def root():
 async def chat(chat_request: ChatRequest):
     request_id = str(uuid.uuid4())
     message = chat_request.message
-    email = chat_request.email
+    member_id = chat_request.member_id
+    trainer_id = chat_request.trainer_id
     
-    logger.info(f"[{request_id}] 채팅 요청 받음 - 사용자: {email}, 메시지: {message[:50]}...")
+    # 사용자 타입 결정 (명시적 지정 > 자동 유추)
+    user_type = chat_request.user_type
+    if not user_type:
+        # 명시적 지정이 없는 경우 member_id 존재 여부에 따라 결정
+        user_type = "member" if member_id else "trainer"
+    
+    logger.info(f"[{request_id}] 채팅 요청 받음 - 타입: {user_type}, 사용자: {member_id}, 트레이너: {trainer_id}, 메시지: {message[:50]}...")
     
     try:
         # 채팅 내역 조회
         chat_history = []
-        if email:
+        # 사용자 ID 결정 (member_id 또는 trainer_id)
+        user_id = member_id if user_type == "member" else trainer_id
+        
+        if user_id:
             try:
-                chat_history = await chat_history_manager.get_chat_history(email, limit=10)
+                chat_history = await chat_history_manager.get_chat_history(user_id, limit=10)
                 logger.info(f"[{request_id}] 대화 내역 조회 완료 - {len(chat_history)}개 메시지")
             except Exception as e:
                 logger.warning(f"[{request_id}] 대화 내역 조회 실패: {str(e)}")
@@ -193,8 +200,9 @@ async def chat(chat_request: ChatRequest):
         # 모듈화된 Supervisor 호출
         response_data = await supervisor.process(
             message=message,
-            email=email,
-            chat_history=chat_history
+            member_id=member_id,
+            trainer_id=trainer_id,
+            user_type=user_type
         )
         
         # 처리 완료 로깅
@@ -205,17 +213,22 @@ async def chat(chat_request: ChatRequest):
         log_pretty_json(f"[{request_id}] AI 응답 데이터", response_data)
         
         # 대화 내역에 추가
-        if email:
+        # 사용자 ID 결정 (member_id 또는 trainer_id)
+        user_id = member_id if user_type == "member" else trainer_id
+        
+        if user_id:
             try:
-                await chat_history_manager.add_chat_entry(email, "user", message)
-                await chat_history_manager.add_chat_entry(email, "assistant", response_data.get("response", ""))
-                logger.info(f"[{request_id}] 대화 내역 저장 완료 - 사용자: {email}")
+                await chat_history_manager.add_chat_entry_async(user_id, "user", message)
+                await chat_history_manager.add_chat_entry_async(user_id, "assistant", response_data.get("response", ""))
+                logger.info(f"[{request_id}] 대화 내역 저장 완료 - {user_type}: {user_id}")
             except Exception as save_e:
                 logger.error(f"[{request_id}] 대화 내역 저장 중 오류: {str(save_e)}")
         
         # 응답 형식을 ChatResponse 모델에 맞게 변환
         formatted_response = ChatResponse(
-            member_id=email or "anonymous",
+            member_id=member_id,
+            trainer_id=trainer_id,
+            user_type=user_type,
             timestamp=datetime.now().isoformat(),
             member_input=message,
             clarified_input=message,  # 현재는 명확화 과정이 없으므로 원본 메시지 사용
@@ -239,7 +252,9 @@ async def chat(chat_request: ChatRequest):
         
         # 오류 응답 반환 (ChatResponse 형식)
         error_response = ChatResponse(
-            member_id=email or "anonymous",
+            member_id=member_id,
+            trainer_id=trainer_id,
+            user_type=user_type,
             timestamp=datetime.now().isoformat(),
             member_input=message,
             clarified_input=None,
@@ -255,17 +270,33 @@ async def chat(chat_request: ChatRequest):
 
 # 대화 내역 조회 엔드포인트
 @app.get("/chat/history")
-async def get_chat_history(email: str = None, limit: int = 20):
-    if not email:
-        raise HTTPException(status_code=400, detail="이메일 파라미터가 필요합니다")
+async def get_chat_history(member_id: str = None, trainer_id: str = None, user_type: str = None, limit: int = 20):
+    # member_id 또는 trainer_id 중 하나는 필요
+    if not member_id and not trainer_id:
+        raise HTTPException(status_code=400, detail="member_id 또는 trainer_id 파라미터가 필요합니다")
+    
+    # 사용자 타입 결정 (명시적 지정 > 자동 유추)
+    if not user_type:
+        user_type = "member" if member_id else "trainer"
+    
+    # 사용자 ID 결정 (타입에 맞는 ID 사용)
+    if user_type == "member":
+        if not member_id:
+            raise HTTPException(status_code=400, detail="user_type이 'member'인 경우 member_id가 필요합니다")
+        user_id = member_id
+    else:  # trainer
+        if not trainer_id:
+            raise HTTPException(status_code=400, detail="user_type이 'trainer'인 경우 trainer_id가 필요합니다")
+        user_id = trainer_id
         
     try:
         # 대화 내역 조회
-        chat_history = await chat_history_manager.get_chat_history(email, limit=limit)
+        chat_history = await chat_history_manager.get_chat_history(user_id, limit=limit)
         
         # 응답 포맷팅
         return {
-            "email": email,
+            "user_type": user_type,
+            "user_id": user_id,
             "count": len(chat_history),
             "chat_history": chat_history
         }
@@ -280,17 +311,33 @@ async def get_chat_history(email: str = None, limit: int = 20):
 
 # 대화 내역 삭제 엔드포인트
 @app.delete("/chat/history")
-async def delete_chat_history(email: str = None):
-    if not email:
-        raise HTTPException(status_code=400, detail="이메일 파라미터가 필요합니다")
+async def delete_chat_history(member_id: str = None, trainer_id: str = None, user_type: str = None):
+    # member_id 또는 trainer_id 중 하나는 필요
+    if not member_id and not trainer_id:
+        raise HTTPException(status_code=400, detail="member_id 또는 trainer_id 파라미터가 필요합니다")
+    
+    # 사용자 타입 결정 (명시적 지정 > 자동 유추)
+    if not user_type:
+        user_type = "member" if member_id else "trainer"
+    
+    # 사용자 ID 결정 (타입에 맞는 ID 사용)
+    if user_type == "member":
+        if not member_id:
+            raise HTTPException(status_code=400, detail="user_type이 'member'인 경우 member_id가 필요합니다")
+        user_id = member_id
+    else:  # trainer
+        if not trainer_id:
+            raise HTTPException(status_code=400, detail="user_type이 'trainer'인 경우 trainer_id가 필요합니다")
+        user_id = trainer_id
         
     try:
         # 대화 내역 삭제
-        await chat_history_manager.delete_chat_history(email)
+        await chat_history_manager.delete_chat_history(user_id)
         
         # 응답 포맷팅
         return {
-            "email": email,
+            "user_type": user_type,
+            "user_id": user_id,
             "status": "success",
             "message": "대화 내역이 삭제되었습니다"
         }

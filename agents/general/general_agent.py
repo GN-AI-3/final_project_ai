@@ -4,14 +4,15 @@ from langchain.prompts import ChatPromptTemplate
 from common_prompts.prompts import AGENT_CONTEXT_PROMPT
 
 class GeneralAgent(BaseAgent):
-    async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    async def process(self, message: str, chat_history: Optional[List[Dict[str, Any]]] = None, context_info: str = "", email: Optional[str] = None) -> Dict[str, Any]:
         """
         사용자 메시지를 처리하고 일반적인 응답을 생성합니다.
         
         Args:
             message: 사용자 메시지
-            email: 사용자 이메일 (선택사항)
             chat_history: 대화 내역 (선택사항)
+            context_info: 에이전트 문맥 정보 (선택사항)
+            email: 사용자 이메일 (선택사항, 호환성 위해 유지)
             
         Returns:
             Dict[str, Any]: 응답 메시지와 관련 정보
@@ -26,9 +27,16 @@ class GeneralAgent(BaseAgent):
                 content = entry.get("content", "")
                 formatted_history += f"{role}: {content}\n"
         
-        # 대화 내역이 있는 경우 AGENT_CONTEXT_PROMPT 사용
+        # 기본 시스템 프롬프트 설정
+        system_prompt = AGENT_CONTEXT_PROMPT
+        
+        # 문맥 정보가 있으면 추가
+        if context_info:
+            system_prompt = f"{system_prompt}\n\n현재 대화 컨텍스트:\n{context_info}"
+        
+        # 프롬프트 설정
         if formatted_history:
-            system_prompt = AGENT_CONTEXT_PROMPT
+            # 대화 내역이 있는 경우
             prompt = ChatPromptTemplate.from_messages([
                 ("system", system_prompt),
                 ("human", message)
@@ -40,12 +48,20 @@ class GeneralAgent(BaseAgent):
                 "chat_history": formatted_history
             }
         else:
-            # 대화 내역이 없는 경우 간단한 프롬프트 사용
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", "당신은 일반적인 대화를 나눌 수 있는 AI 어시스턴트입니다."),
-                ("human", "{message}")
-            ])
-            variables = {"message": message}
+            # 대화 내역이 없지만 문맥 정보가 있는 경우
+            if context_info:
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", system_prompt),
+                    ("human", message)
+                ])
+                variables = {"message": message}
+            else:
+                # 대화 내역과 문맥 정보가 모두 없는 경우 간단한 프롬프트 사용
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", "당신은 일반적인 대화를 나눌 수 있는 AI 어시스턴트입니다."),
+                    ("human", "{message}")
+                ])
+                variables = {"message": message}
             
         chain = prompt | self.model
         response = await chain.ainvoke(variables)

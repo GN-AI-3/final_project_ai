@@ -14,7 +14,16 @@ from langchain.prompts import ChatPromptTemplate
 from langsmith.run_helpers import traceable
 
 from supervisor_modules.utils.logger_setup import get_logger
-from supervisor_modules.utils.qdrant_helper import get_user_insights, search_relevant_conversations
+try:
+    from supervisor_modules.utils.qdrant_helper import get_user_insights, search_relevant_conversations
+except ImportError:
+    # QDrant 기능이 없는 경우를 대비한 대체 함수
+    async def get_user_insights(email: str) -> Dict[str, Any]:
+        return {"user_insights": "", "recent_events": "", "user_persona": ""}
+    
+    async def search_relevant_conversations(email: str, query: str) -> List[Dict[str, Any]]:
+        return []
+
 from common_prompts.prompts import AGENT_CONTEXT_PROMPT, QDRANT_INSIGHTS_PROMPT, QDRANT_SEARCH_PROMPT
 from supervisor_modules.state.state_manager import SupervisorState
 
@@ -38,24 +47,23 @@ except Exception as e:
     logger.warning(f"LangSmith 트레이서 초기화 실패: {str(e)}")
     tracer = None
 
-async def generate_response(state_dict: Dict[str, Any]) -> Dict[str, Any]:
+async def generate_response(state: SupervisorState) -> str:
     """
     에이전트 결과를 바탕으로 응답 생성
     
     Args:
-        state_dict: 현재 상태 딕셔너리
+        state: 현재 상태 객체
         
     Returns:
-        Dict[str, Any]: 업데이트된 상태 딕셔너리
+        str: 생성된 응답 텍스트
     """
-    # 상태 딕셔너리로부터 SupervisorState 생성
-    state = SupervisorState.from_dict(state_dict)
-    
     # 상태에서 필요한 정보 추출
     request_id = state.request_id
+    message = state.message
     agent_results = state.agent_results
     selected_agents = state.selected_agents
     categories = state.categories
+    context_info = getattr(state, 'context_info', {})
     
     start_time = time.time()
     
@@ -98,18 +106,22 @@ async def generate_response(state_dict: Dict[str, Any]) -> Dict[str, Any]:
         
         logger.info(f"[{request_id}] 응답 생성 완료 (소요시간: {time.time() - start_time:.2f}초)")
         
+        return response
+        
     except Exception as e:
         logger.error(f"[{request_id}] 응답 생성 과정에서 오류 발생: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # 오류 발생 시 기본 응답과 함께 상태 업데이트
-        state.response = f"죄송합니다. 응답을 생성하는 과정에서 오류가 발생했습니다: {str(e)}"
+        # 오류 발생 시 기본 응답
+        error_message = f"죄송합니다. 응답을 생성하는 과정에서 오류가 발생했습니다: {str(e)}"
+        
+        # 상태 업데이트
+        state.response = error_message
         state.response_type = "error"
         state.metrics["response_generation_error"] = str(e)
         state.metrics["response_generation_time"] = time.time() - start_time
-    
-    # 상태 객체를 딕셔너리로 변환하여 반환
-    return state.to_dict()
+        
+        return error_message
 
 @traceable(name="generate_response_with_insights")
 async def generate_response_with_insights(agent_results: List[Dict[str, Any]], state: Dict[str, Any], message: str, email: Optional[str] = None) -> str:
@@ -138,7 +150,12 @@ async def generate_response_with_insights(agent_results: List[Dict[str, Any]], s
             return combined_response
             
         # 인사이트 정보 가져오기
-        user_insights_data = await get_user_insights(email)
+        try:
+            user_insights_data = await get_user_insights(email)
+        except Exception as e:
+            logger.warning(f"인사이트 정보를 가져오는 중 오류 발생: {str(e)}. 기본 응답 생성기를 사용합니다.")
+            combined_response = combine_results_to_string(agent_results)
+            return combined_response
         
         # 에이전트 응답 합치기
         agent_combined_response = combine_results_to_string(agent_results)
@@ -149,7 +166,7 @@ async def generate_response_with_insights(agent_results: List[Dict[str, Any]], s
                 
         # 모델 및 프롬프트 설정
         model = ChatOpenAI(
-            model_name="gpt-4o",
+            model_name="gpt-3.5-turbo",
             temperature=0.7
         )
         
@@ -196,7 +213,7 @@ async def generate_response_with_semantic_search(agent_results: List[Dict[str, A
         email: 사용자 이메일
         
     Returns:
-        str: 의미 검색 결과를 활용한 최종 응답
+        str: 의미 검색 기반 최종 응답
     """
     try:
         # 기본 검사
@@ -211,8 +228,26 @@ async def generate_response_with_semantic_search(agent_results: List[Dict[str, A
             return combined_response
             
         # 관련 대화 검색
-        relevant_conversations = await search_relevant_conversations(email, message)
+        try:
+            relevant_conversations = await search_relevant_conversations(email, message)
+        except Exception as e:
+            logger.warning(f"관련 대화 검색 중 오류 발생: {str(e)}. 기본 응답 생성기를 사용합니다.")
+            combined_response = combine_results_to_string(agent_results)
+            return combined_response
         
+        # 관련 대화가 없는 경우 기본 응답 생성
+        if not relevant_conversations:
+            logger.info("관련 대화가 없습니다. 기본 응답 생성기를 사용합니다.")
+            combined_response = combine_results_to_string(agent_results)
+            return combined_response
+            
+        # 관련 대화 포맷팅
+        formatted_conversations = ""
+        for i, conv in enumerate(relevant_conversations[:3]):  # 최대 3개만 사용
+            formatted_conversations += f"대화 {i+1}:\n"
+            formatted_conversations += f"질문: {conv.get('question', '')}\n"
+            formatted_conversations += f"답변: {conv.get('answer', '')}\n\n"
+            
         # 에이전트 응답 합치기
         agent_combined_response = combine_results_to_string(agent_results)
         
@@ -222,7 +257,7 @@ async def generate_response_with_semantic_search(agent_results: List[Dict[str, A
                 
         # 모델 및 프롬프트 설정
         model = ChatOpenAI(
-            model_name="gpt-4o",
+            model_name="gpt-3.5-turbo",
             temperature=0.7
         )
         
@@ -234,7 +269,7 @@ async def generate_response_with_semantic_search(agent_results: List[Dict[str, A
         # 변수 설정
         variables = {
             "message": message,
-            "relevant_conversations": relevant_conversations,
+            "relevant_conversations": formatted_conversations,
             "chat_history": formatted_history,
             "agent_response": agent_combined_response
         }
@@ -257,69 +292,63 @@ async def generate_response_with_semantic_search(agent_results: List[Dict[str, A
 
 def extract_agent_content(agent_result: Any) -> str:
     """
-    에이전트 결과에서 내용 추출
+    에이전트 결과에서 응답 컨텐츠만 추출하는 헬퍼 함수
     
     Args:
-        agent_result: 에이전트 결과
+        agent_result: 에이전트 응답 결과
         
     Returns:
-        str: 추출된 내용
+        str: 추출된 응답 컨텐츠
     """
-    if agent_result is None:
-        return "응답이 없습니다."
-    
-    # 직접 "action_plan" 문자열이 반환되는 경우 처리
-    if agent_result == "action_plan" or agent_result == "steps" or agent_result == "actions":
-        return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
-    
+    # 이미 문자열인 경우
     if isinstance(agent_result, str):
-        # 문자열이 'action_plan'이거나 'steps' 같은 중간 계획인 경우 대체 메시지 반환
-        if agent_result in ["action_plan", "steps"]:
-            return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
         return agent_result
-    
+        
+    # 딕셔너리인 경우 "response" 또는 "content" 키 찾기
     if isinstance(agent_result, dict):
-        # exercise 에이전트 응답 처리
-        if "type" in agent_result and agent_result["type"] == "exercise" and "response" in agent_result:
-            # response가 "action_plan"인 경우 처리
-            if agent_result["response"] == "action_plan" or agent_result["response"] == "steps" or agent_result["response"] == "actions":
-                return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
-            return agent_result["response"]
+        # "response" 키 확인
+        if "response" in agent_result:
+            response = agent_result["response"]
+            if isinstance(response, str):
+                return response
+            elif isinstance(response, dict) and "content" in response:
+                return response["content"]
+                
+        # "content" 키 확인
+        if "content" in agent_result:
+            return agent_result["content"]
+            
+        # "text" 키 확인
+        if "text" in agent_result:
+            return agent_result["text"]
+            
+        # "message" 키 확인
+        if "message" in agent_result:
+            return agent_result["message"]
+            
+        # 딕셔너리 값 중 첫 번째 문자열 반환
+        for key, value in agent_result.items():
+            if isinstance(value, str):
+                return value
+                
+        # 모든 키-값 쌍을 문자열로 변환하여 반환
+        contents = []
+        for key, value in agent_result.items():
+            contents.append(f"{key}: {value}")
+        return "\n".join(contents)
         
-        # 특정 패턴 확인 - action_plan이나 steps 같은 중간 계획 데이터가 있는지 확인
-        if "action_plan" in agent_result or "steps" in agent_result or "actions" in agent_result:
-            if "final_response" in agent_result and agent_result["final_response"]:
-                return agent_result["final_response"]
-            if "result" in agent_result and agent_result["result"]:
-                return agent_result["result"]
-            return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
-        
-        # 가능한 키 목록 순서대로 시도
-        for key in ["content", "response", "answer", "output", "text", "message", "final_response", "result"]:
-            if key in agent_result and agent_result[key] is not None:
-                if isinstance(agent_result[key], str):
-                    # 키 값이 'action_plan'이나 'steps' 같은 중간 계획인 경우 건너뛰기
-                    if agent_result[key] in ["action_plan", "steps", "actions"]:
-                        continue
-                    return agent_result[key]
-                else:
-                    return str(agent_result[key])
-        
-        # 알려진 키가 없는 경우 전체 딕셔너리 반환
-        return str(agent_result)
-    
-    # 리스트인 경우 action_plan이나 단계 정보일 수 있음
-    if isinstance(agent_result, list) and len(agent_result) > 0:
-        # 리스트의 첫 번째 항목에 'description', 'tool', 'input' 필드가 있으면 action_plan으로 간주
-        if isinstance(agent_result[0], dict) and all(k in agent_result[0] for k in ["description", "tool"]):
-            return "운동 계획을 생성 중입니다. 추천 운동 루틴을 곧 안내해 드리겠습니다."
-    
-    # 기타 타입
+    # 리스트인 경우
+    if isinstance(agent_result, list):
+        # 첫 번째 요소 확인
+        if len(agent_result) > 0:
+            return extract_agent_content(agent_result[0])
+            
+    # 다른 타입인 경우 문자열로 변환
     return str(agent_result)
 
 def combine_agent_responses(valid_results: List[Dict[str, Any]], categories: List[str], request_id: str) -> str:
     """
-    여러 에이전트의 응답을 결합
+    여러 에이전트 응답을 결합하는 함수
     
     Args:
         valid_results: 유효한 에이전트 결과 목록
@@ -329,100 +358,96 @@ def combine_agent_responses(valid_results: List[Dict[str, Any]], categories: Lis
     Returns:
         str: 결합된 응답
     """
-    # 카테고리별 결과 추출
-    category_results = {}
-    for result in valid_results:
-        agent_name = result["agent"]
-        content = extract_agent_content(result["result"])
-        category_results[agent_name] = content
-    
-    # 특별한 케이스 처리
-    if "exercise" in category_results and "food" in category_results:
-        # 운동과 식단 결합
-        exercise_content = category_results["exercise"]
-        food_content = category_results["food"]
+    try:
+        combined_responses = {}
         
-        combined = "【운동 관련】\n" + exercise_content + "\n\n【식단 관련】\n" + food_content
-        logger.info(f"[{request_id}] 운동과 식단 결과 결합")
-        return combined
-    
-    # 일반적인 결과 결합 (첫 번째 에이전트의 결과 사용)
-    priority_order = ["motivation", "exercise", "food", "schedule", "general"]
-    
-    for category in priority_order:
-        if category in category_results:
-            logger.info(f"[{request_id}] 우선순위에 따라 '{category}' 에이전트 응답 선택")
-            return category_results[category]
-    
-    # 우선순위에 없는 경우 첫 번째 결과 반환
-    first_agent = list(category_results.keys())[0]
-    logger.info(f"[{request_id}] 우선순위에 없는 에이전트 - 첫 번째 '{first_agent}' 응답 선택")
-    return category_results[first_agent]
+        # 각 유효한 결과 처리
+        for result in valid_results:
+            agent_name = result.get("agent", "unknown")
+            agent_content = extract_agent_content(result.get("result", ""))
+            combined_responses[agent_name] = agent_content
+            
+        # 카테고리별로 결합
+        if len(combined_responses) == 1:
+            # 단일 응답만 있는 경우
+            return next(iter(combined_responses.values()))
+            
+        # 여러 응답 결합
+        final_response = ""
+        for agent, response in combined_responses.items():
+            if response:
+                final_response += response + "\n\n"
+                
+        return final_response.strip()
+        
+    except Exception as e:
+        logger.error(f"[{request_id}] 응답 결합 중 오류 발생: {str(e)}")
+        
+        # 오류 시 유효한 결과 중 첫 번째 응답 사용
+        if valid_results and len(valid_results) > 0:
+            return extract_agent_content(valid_results[0].get("result", ""))
+            
+        return "응답을 생성하는 중 오류가 발생했습니다."
 
 def combine_results_to_string(agent_results: List[Dict[str, Any]]) -> str:
     """
     에이전트 결과 목록을 단일 문자열로 결합합니다.
     
     Args:
-        agent_results: 에이전트 응답 결과 목록
+        agent_results: 에이전트 결과 목록
         
     Returns:
         str: 결합된 응답 문자열
     """
     if not agent_results:
-        return "응답을 생성할 수 없습니다."
-        
-    if len(agent_results) == 1:
-        # 단일 결과인 경우
-        result = agent_results[0].get("result", {})
-        if isinstance(result, dict) and "response" in result:
-            return result["response"]
-        if isinstance(result, str):
-            return result
-        return str(result)
+        return "응답을 생성하는 중 오류가 발생했습니다."
     
-    # 여러 결과가 있는 경우
-    responses = []
+    combined_text = ""
     for result in agent_results:
-        if "agent" in result and "result" in result:
-            agent_name = result["agent"]
-            content = None
-            
-            if isinstance(result["result"], dict) and "response" in result["result"]:
-                content = result["result"]["response"]
-            elif isinstance(result["result"], str):
-                content = result["result"]
-            else:
-                content = str(result["result"])
-                
-            if content:
-                responses.append(f"【{agent_name}】\n{content}")
-    
-    if not responses:
-        return "응답을 생성할 수 없습니다."
+        if "error" in result:
+            continue
         
-    return "\n\n".join(responses)
+        agent_type = result.get("agent", "unknown")
+        agent_result = result.get("result", {})
+        
+        # 에이전트 결과 추출
+        content = extract_agent_content(agent_result)
+        if content:
+            if combined_text:
+                combined_text += "\n\n"
+            combined_text += content
+    
+    # 결합된 텍스트가 없으면 기본 메시지 반환
+    if not combined_text:
+        return "죄송합니다, 현재 질문에 대한 답변을 생성할 수 없습니다. 다시 질문해 주세요."
+    
+    # 최대 길이 제한
+    if len(combined_text) > MAX_RESPONSE_LENGTH:
+        combined_text = combined_text[:MAX_RESPONSE_LENGTH] + "..."
+        
+    return combined_text
 
 def format_chat_history(chat_history: List[Dict[str, Any]]) -> str:
     """
-    채팅 내역을 포맷팅합니다.
+    대화 내역을 형식화합니다.
     
     Args:
-        chat_history: 채팅 내역 목록
+        chat_history: 대화 내역 목록
         
     Returns:
-        str: 포맷팅된 채팅 내역
+        str: 형식화된 대화 내역 문자열
     """
     if not chat_history:
         return ""
-        
+    
     formatted_history = ""
-    # 최대 5개의 최신 메시지만 사용
+    
+    # 최근 5개 대화만 사용
     recent_history = chat_history[-5:] if len(chat_history) > 5 else chat_history
     
     for entry in recent_history:
         role = "사용자" if entry.get("role", "") == "user" else "AI"
         content = entry.get("content", "")
         formatted_history += f"{role}: {content}\n"
-        
-    return formatted_history 
+    
+    return formatted_history.strip() 

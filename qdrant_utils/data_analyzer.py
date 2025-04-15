@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-데이터 분석기 - PostgreSQL의 채팅 메시지를 가져와 성향 분석 및 사건 정리 후 Qdrant에 저장
+데이터 분석기 - PostgreSQL의 채팅 메시지를 가져와 성향 분석 및 사건 정리 후 Qdrant에만 저장
 
 실행 방법:
 - 단일 실행: python -m qdrant_utils.data_analyzer
@@ -14,9 +14,9 @@ import json
 import traceback
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
+from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 import qdrant_client
 from qdrant_client.http import models
 import openai
@@ -56,7 +56,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 class DataAnalyzer:
     """
     채팅 데이터 분석기 클래스
-    PostgreSQL에서 데이터를 가져와 분석하고 Qdrant에 저장합니다.
+    PostgreSQL에서 데이터를 가져와 분석하고 Qdrant에만 저장합니다.
     """
     
     def __init__(self):
@@ -126,61 +126,11 @@ class DataAnalyzer:
                 password=POSTGRES_PASSWORD
             )
             logger.info("PostgreSQL 연결 성공")
-            
-            # 필요한 테이블 존재 확인 및 생성
-            self.ensure_tables_exist()
-            
             return True
         except Exception as e:
             logger.error(f"PostgreSQL 연결 오류: {str(e)}")
             logger.error(traceback.format_exc())
             return False
-    
-    def ensure_tables_exist(self):
-        """필요한 테이블이 존재하는지 확인하고 없으면 생성"""
-        try:
-            with self.pg_conn.cursor() as cursor:
-                # analysis_results 테이블 존재 확인
-                cursor.execute("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_name = 'analysis_results'
-                    );
-                """)
-                table_exists = cursor.fetchone()[0]
-                
-                if not table_exists:
-                    logger.info("analysis_results 테이블이 없어 새로 생성합니다.")
-                    
-                    # analysis_results 테이블 생성
-                    cursor.execute("""
-                        CREATE TABLE analysis_results (
-                            id SERIAL PRIMARY KEY,
-                            user_id INTEGER NOT NULL,
-                            analysis_date DATE NOT NULL,
-                            persona_type VARCHAR(255),
-                            habits JSONB,
-                            interests JSONB,
-                            communication_style VARCHAR(255),
-                            goals JSONB,
-                            challenges JSONB,
-                            persona_summary TEXT,
-                            events JSONB,
-                            top_topics JSONB,
-                            sentiment VARCHAR(50),
-                            events_summary TEXT,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            UNIQUE (user_id, analysis_date)
-                        );
-                    """)
-                    
-                    self.pg_conn.commit()
-                    logger.info("analysis_results 테이블 생성 완료")
-        except Exception as e:
-            logger.error(f"테이블 확인/생성 오류: {str(e)}")
-            logger.error(traceback.format_exc())
-            self.pg_conn.rollback()
     
     def close_postgres(self):
         """PostgreSQL 연결 종료"""
@@ -229,7 +179,7 @@ class DataAnalyzer:
             logger.error(f"채팅 메시지 조회 오류: {str(e)}")
             logger.error(traceback.format_exc())
             return []
-    
+            
     def group_messages_by_user(self, messages: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """
         사용자별로 메시지를 그룹화합니다.
@@ -314,9 +264,23 @@ class DataAnalyzer:
     "communication_style": "소통 스타일(간결한, 상세한, 질문이 많은, 감정적인 등)",
     "goals": ["목표1", "목표2"],
     "challenges": ["어려움1", "어려움2"],
+    "exercise_info": {{
+        "preferences": ["선호하는 운동1", "선호하는 운동2"],
+        "frequency": "운동 빈도 (예: 주 3회)",
+        "intensity": "운동 강도 (예: 고강도, 중강도, 저강도)",
+        "goals": ["운동 목표1", "운동 목표2"]
+    }},
+    "diet_info": {{
+        "preferences": ["선호하는 음식1", "선호하는 음식2"],
+        "restrictions": ["식이 제한사항1", "식이 제한사항2"],
+        "habits": ["식사 습관1", "식사 습관2"],
+        "goals": ["식단 목표1", "식단 목표2"]
+    }},
     "summary": "사용자 성향 요약 (2-3문장)"
 }}
 ```
+
+특히 운동 정보와 식단 정보를 자세히 분석해주세요. 사용자가 언급한 운동 선호도, 운동 빈도, 운동 강도, 운동 목표뿐만 아니라 식단 선호도, 식이 제한사항, 식사 습관, 식단 목표 등을 모두 포함해주세요.
 
 사용자 대화 내역:
 {messages}
@@ -325,11 +289,11 @@ class DataAnalyzer:
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "당신은 사용자 성향을 분석하는 전문가입니다."},
+                    {"role": "system", "content": "당신은 사용자 성향을 분석하는 전문가입니다. 특히 운동 습관과 식단 패턴에 대한 통찰력이 뛰어납니다."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
-                max_tokens=800
+                max_tokens=1200
             )
             
             # 응답 파싱
@@ -352,6 +316,18 @@ class DataAnalyzer:
                 "communication_style": result.get("communication_style", "Unknown"),
                 "goals": result.get("goals", []),
                 "challenges": result.get("challenges", []),
+                "exercise_info": result.get("exercise_info", {
+                    "preferences": [],
+                    "frequency": "Unknown",
+                    "intensity": "Unknown",
+                    "goals": []
+                }),
+                "diet_info": result.get("diet_info", {
+                    "preferences": [],
+                    "restrictions": [],
+                    "habits": [],
+                    "goals": []
+                }),
                 "summary": result.get("summary", "")
             }
             
@@ -365,6 +341,18 @@ class DataAnalyzer:
                 "communication_style": "Unknown",
                 "goals": [],
                 "challenges": [],
+                "exercise_info": {
+                    "preferences": [],
+                    "frequency": "Unknown",
+                    "intensity": "Unknown",
+                    "goals": []
+                },
+                "diet_info": {
+                    "preferences": [],
+                    "restrictions": [],
+                    "habits": [],
+                    "goals": []
+                },
                 "summary": f"분석 오류: {str(e)}"
             }
     
@@ -473,9 +461,9 @@ class DataAnalyzer:
             logger.error(traceback.format_exc())
             return [0.0] * 1536  # OpenAI 임베딩 차원에 맞춰 0으로 채운 벡터 반환
     
-    async def store_analysis_results(self, user_email: str, persona_result: Dict, events_result: Dict) -> bool:
+    async def store_insights_to_qdrant(self, user_email: str, persona_result: Dict, events_result: Dict) -> bool:
         """
-        분석 결과를 PostgreSQL에 저장합니다.
+        분석 결과를 QDrant에 저장합니다.
         
         Args:
             user_email: 사용자 이메일
@@ -485,129 +473,109 @@ class DataAnalyzer:
         Returns:
             bool: 저장 성공 여부
         """
-        if not self.pg_conn:
-            if not self.connect_postgres():
-                return False
-                
-        # 결과값 추출
-        persona_type = persona_result.get('persona_type', '')
-        habits = persona_result.get('habits', [])
-        interests = persona_result.get('interests', [])
-        communication_style = persona_result.get('communication_style', '')
-        goals = persona_result.get('goals', [])
-        challenges = persona_result.get('challenges', [])
-        persona_summary = persona_result.get('summary', '')
-        
-        events = events_result.get('events', [])
-        top_topics = events_result.get('top_topics', [])
-        sentiment = events_result.get('sentiment', '')
-        events_summary = events_result.get('summary', '')
-        
         try:
-            with self.pg_conn.cursor() as cursor:
-                # 사용자 ID 조회
-                cursor.execute("SELECT id FROM member WHERE email = %s", (user_email,))
-                user_id = cursor.fetchone()[0] if cursor.rowcount > 0 else None
-                
-                if not user_id:
-                    logger.error(f"사용자 {user_email}를 찾을 수 없습니다.")
-                    return False
-                
-                # 기존 분석 결과 확인
-                cursor.execute(
-                    "SELECT id FROM analysis_results WHERE user_id = %s AND analysis_date = CURRENT_DATE",
-                    (user_id,)
+            # 임베딩 생성을 위한 텍스트
+            persona_text = f"성향: {persona_result.get('persona_type', '')}\n"
+            persona_text += f"요약: {persona_result.get('summary', '')}\n"
+            persona_text += f"관심사: {', '.join(persona_result.get('interests', []))}\n"
+            persona_text += f"목표: {', '.join(persona_result.get('goals', []))}\n"
+            
+            # 운동 정보 추가
+            exercise_info = persona_result.get('exercise_info', {})
+            persona_text += "운동 정보:\n"
+            persona_text += f"- 선호 운동: {', '.join(exercise_info.get('preferences', []))}\n"
+            persona_text += f"- 운동 빈도: {exercise_info.get('frequency', '')}\n"
+            persona_text += f"- 운동 강도: {exercise_info.get('intensity', '')}\n"
+            persona_text += f"- 운동 목표: {', '.join(exercise_info.get('goals', []))}\n"
+            
+            # 식단 정보 추가
+            diet_info = persona_result.get('diet_info', {})
+            persona_text += "식단 정보:\n"
+            persona_text += f"- 선호 음식: {', '.join(diet_info.get('preferences', []))}\n"
+            persona_text += f"- 식이 제한: {', '.join(diet_info.get('restrictions', []))}\n"
+            persona_text += f"- 식사 습관: {', '.join(diet_info.get('habits', []))}\n"
+            persona_text += f"- 식단 목표: {', '.join(diet_info.get('goals', []))}"
+            
+            events_text = f"이벤트: {', '.join([e.get('description', '') for e in events_result.get('events', [])])}\n"
+            events_text += f"주요 주제: {', '.join(events_result.get('top_topics', []))}\n"
+            events_text += f"요약: {events_result.get('summary', '')}"
+            
+            combined_text = f"{persona_text}\n\n{events_text}"
+            
+            # 임베딩 생성
+            embedding = await self.generate_embeddings(combined_text)
+            
+            # 컬렉션 존재 확인
+            collections = self.qdrant_client.get_collections().collections
+            collection_names = [c.name for c in collections]
+            
+            if QDRANT_COLLECTION not in collection_names:
+                logger.info(f"컬렉션 '{QDRANT_COLLECTION}'이 없어 새로 생성합니다.")
+                self.qdrant_client.create_collection(
+                    collection_name=QDRANT_COLLECTION,
+                    vectors_config=models.VectorParams(
+                        size=1536,  # OpenAI 임베딩 차원
+                        distance=models.Distance.COSINE
+                    )
                 )
                 
-                analysis_exists = cursor.rowcount > 0
+                # 컬렉션 스키마 - 필드 인덱싱 설정
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="user_email",
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="timestamp",
+                    field_schema=models.PayloadSchemaType.DATETIME
+                )
                 
-                if analysis_exists:
-                    # 기존 분석 결과 업데이트
-                    query = """
-                    UPDATE analysis_results SET
-                        persona_type = %s,
-                        habits = %s,
-                        interests = %s,
-                        communication_style = %s,
-                        goals = %s,
-                        challenges = %s,
-                        persona_summary = %s,
-                        events = %s,
-                        top_topics = %s,
-                        sentiment = %s,
-                        events_summary = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE
-                        user_id = %s AND analysis_date = CURRENT_DATE
-                    """
-                    
-                    cursor.execute(
-                        query,
-                        (
-                            persona_type,
-                            json.dumps(habits, ensure_ascii=False),
-                            json.dumps(interests, ensure_ascii=False),
-                            communication_style,
-                            json.dumps(goals, ensure_ascii=False),
-                            json.dumps(challenges, ensure_ascii=False),
-                            persona_summary,
-                            json.dumps(events, ensure_ascii=False),
-                            json.dumps(top_topics, ensure_ascii=False),
-                            sentiment,
-                            events_summary,
-                            user_id
-                        )
+                # 운동 및 식단 관련 필드도 인덱싱
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="persona.exercise_info.frequency",
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="persona.exercise_info.intensity",
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+                self.qdrant_client.create_payload_index(
+                    collection_name=QDRANT_COLLECTION,
+                    field_name="persona.diet_info.restrictions",
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+            
+            # Qdrant에 저장
+            timestamp = datetime.now().isoformat()
+            # UUID 사용하여 고유 ID 생성
+            point_id = str(uuid.uuid4())
+            
+            self.qdrant_client.upsert(
+                collection_name=QDRANT_COLLECTION,
+                points=[
+                    models.PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload={
+                            "user_email": user_email,
+                            "timestamp": timestamp,
+                            "persona": persona_result,
+                            "events": events_result,
+                            "combined_text": combined_text
+                        }
                     )
-                else:
-                    # 새 분석 결과 삽입
-                    query = """
-                    INSERT INTO analysis_results (
-                        user_id, 
-                        analysis_date, 
-                        persona_type, 
-                        habits,
-                        interests, 
-                        communication_style, 
-                        goals, 
-                        challenges,
-                        persona_summary, 
-                        events, 
-                        top_topics, 
-                        sentiment, 
-                        events_summary,
-                        created_at, 
-                        updated_at
-                    ) VALUES (
-                        %s, CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                    )
-                    """
-                    
-                    cursor.execute(
-                        query,
-                        (
-                            user_id,
-                            persona_type,
-                            json.dumps(habits, ensure_ascii=False),
-                            json.dumps(interests, ensure_ascii=False),
-                            communication_style,
-                            json.dumps(goals, ensure_ascii=False),
-                            json.dumps(challenges, ensure_ascii=False),
-                            persona_summary,
-                            json.dumps(events, ensure_ascii=False),
-                            json.dumps(top_topics, ensure_ascii=False),
-                            sentiment,
-                            events_summary
-                        )
-                    )
-                
-                self.pg_conn.commit()
-                logger.info(f"사용자 {user_email}의 분석 결과가 PostgreSQL에 저장되었습니다.")
-                return True
-                
+                ]
+            )
+            
+            logger.info(f"사용자 '{user_email}'의 분석 결과가 QDrant에 저장되었습니다. (ID: {point_id})")
+            return True
+            
         except Exception as e:
-            logger.error(f"분석 결과 저장 오류: {str(e)}")
+            logger.error(f"QDrant 저장 오류: {str(e)}")
             logger.error(traceback.format_exc())
-            self.pg_conn.rollback()
             return False
     
     async def analyze_daily_data(self, target_date: Optional[datetime] = None):
@@ -653,13 +621,6 @@ class DataAnalyzer:
             # 사건 분석 및 라벨링
             event_analysis = await self.analyze_events(formatted_messages, email)
             
-            # 분석 결과 저장 - PostgreSQL
-            success = await self.store_analysis_results(
-                user_email=email,
-                persona_result=persona_analysis,
-                events_result=event_analysis
-            )
-            
             # 분석 결과 저장 - QDrant
             qdrant_success = await self.store_insights_to_qdrant(
                 user_email=email,
@@ -667,101 +628,12 @@ class DataAnalyzer:
                 events_result=event_analysis
             )
             
-            if success:
-                logger.info(f"사용자 {email} 분석 결과 PostgreSQL 저장 완료")
-            else:
-                logger.error(f"사용자 {email} 분석 결과 PostgreSQL 저장 실패")
-            
             if qdrant_success:
                 logger.info(f"사용자 {email} 분석 결과 QDrant 저장 완료")
             else:
                 logger.error(f"사용자 {email} 분석 결과 QDrant 저장 실패")
         
         logger.info(f"{from_date.strftime('%Y-%m-%d')} 데이터 분석 완료")
-    
-    async def store_insights_to_qdrant(self, user_email: str, persona_result: Dict, events_result: Dict) -> bool:
-        """
-        분석 결과를 QDrant에 저장합니다.
-        
-        Args:
-            user_email: 사용자 이메일
-            persona_result: 성향 분석 결과
-            events_result: 사건 분석 결과
-            
-        Returns:
-            bool: 저장 성공 여부
-        """
-        try:
-            # 임베딩 생성을 위한 텍스트
-            persona_text = f"성향: {persona_result.get('persona_type', '')}\n"
-            persona_text += f"요약: {persona_result.get('summary', '')}\n"
-            persona_text += f"관심사: {', '.join(persona_result.get('interests', []))}\n"
-            persona_text += f"목표: {', '.join(persona_result.get('goals', []))}"
-            
-            events_text = f"이벤트: {', '.join([e.get('description', '') for e in events_result.get('events', [])])}\n"
-            events_text += f"주요 주제: {', '.join(events_result.get('top_topics', []))}\n"
-            events_text += f"요약: {events_result.get('summary', '')}"
-            
-            combined_text = f"{persona_text}\n\n{events_text}"
-            
-            # 임베딩 생성
-            embedding = await self.generate_embeddings(combined_text)
-            
-            # 컬렉션 존재 확인
-            collections = self.qdrant_client.get_collections().collections
-            collection_names = [c.name for c in collections]
-            
-            if QDRANT_COLLECTION not in collection_names:
-                logger.info(f"컬렉션 '{QDRANT_COLLECTION}'이 없어 새로 생성합니다.")
-                self.qdrant_client.create_collection(
-                    collection_name=QDRANT_COLLECTION,
-                    vectors_config=models.VectorParams(
-                        size=1536,  # OpenAI 임베딩 차원
-                        distance=models.Distance.COSINE
-                    )
-                )
-                
-                # 컬렉션 스키마 - 필드 인덱싱 설정
-                self.qdrant_client.create_payload_index(
-                    collection_name=QDRANT_COLLECTION,
-                    field_name="user_email",
-                    field_schema=models.PayloadSchemaType.KEYWORD
-                )
-                self.qdrant_client.create_payload_index(
-                    collection_name=QDRANT_COLLECTION,
-                    field_name="timestamp",
-                    field_schema=models.PayloadSchemaType.DATETIME
-                )
-            
-            # Qdrant에 저장
-            timestamp = datetime.now().isoformat()
-            # UUID 사용하여 고유 ID 생성
-            point_id = str(uuid.uuid4())
-            
-            self.qdrant_client.upsert(
-                collection_name=QDRANT_COLLECTION,
-                points=[
-                    models.PointStruct(
-                        id=point_id,
-                        vector=embedding,
-                        payload={
-                            "user_email": user_email,
-                            "timestamp": timestamp,
-                            "persona": persona_result,
-                            "events": events_result,
-                            "combined_text": combined_text
-                        }
-                    )
-                ]
-            )
-            
-            logger.info(f"사용자 '{user_email}'의 분석 결과가 QDrant에 저장되었습니다. (ID: {point_id})")
-            return True
-            
-        except Exception as e:
-            logger.error(f"QDrant 저장 오류: {str(e)}")
-            logger.error(traceback.format_exc())
-            return False
     
     def run_scheduled_analysis(self):
         """매일 자정에 전날 데이터 분석을 실행합니다."""
@@ -773,9 +645,9 @@ class DataAnalyzer:
     def start_scheduler(self):
         """스케줄러를 시작합니다."""
         # 매일 자정에 분석 실행
-        schedule.every().day.at("11:46").do(self.run_scheduled_analysis)
+        schedule.every().day.at("15:20").do(self.run_scheduled_analysis)
         
-        logger.info("스케줄러가 시작되었습니다. 매일 11:46에 분석이 실행됩니다.")
+        logger.info("스케줄러가 시작되었습니다. 매일 15:20에 분석이 실행됩니다.")
         
         while True:
             schedule.run_pending()
