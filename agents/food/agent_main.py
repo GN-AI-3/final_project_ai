@@ -1,55 +1,80 @@
+"""
+식단 관리 에이전트
+
+이 모듈은 식단 관리 에이전트를 정의합니다.
+"""
 from typing import Dict, Any, List, Optional, Tuple
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from langchain.schema import AIMessage, HumanMessage
 from langchain.prompts import ChatPromptTemplate
 from langchain.callbacks.manager import CallbackManager
-from agents.food.subagents.meal_input_agent.analyze import MealInputAgent
-from agents.food.subagents.balanced_meal_agent.nodes import BalancedMealAgent
-from agents.food.subagents.nutrient_agent.nodes import NutrientAgent
-from agents.food.common.db import (
-    get_user_info, get_food_nutrition, save_meal_record,
-    get_today_meals, get_weekly_meals, get_diet_plan,
-    get_user_preferences_db, recommend_foods
-)
- 
 from langgraph.graph import Graph, StateGraph
 import json
 import os
 from dataclasses import dataclass
-from enum import Enum, auto
-from agents.food.common.prompts import get_analyze_input_prompt
+from langchain_core.language_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+import logging
+import traceback
+import sys
+from datetime import datetime
+import uuid
+
+from agents.food.tools.db_utils import get_user_info
+
+from .workflow import run_food_workflow, DietWorkflow
+from .prompts.analyze_input_prompt import get_analyze_input_prompt
+from .enums import IntentType, parse_intent_type
 
 # LangSmith 설정
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "food-agent"
 
-class IntentType(Enum):
-    """의도 타입"""
-    MEAL_INPUT = auto()
-    MEAL_RECOMMENDATION = auto()
-    NUTRIENT_ANALYSIS = auto()
-    MEAL_LOOKUP = auto()
-    OTHER = auto()
+# 로깅 설정
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# 콘솔 핸들러 추가
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# 파일 핸들러 추가
+file_handler = logging.FileHandler('food_agent.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
 
 @dataclass
 class Intent:
-    """의도 데이터 클래스"""
+    """의도 정보"""
     type: IntentType
-    confidence: float
-    details: Dict[str, Any]
+    meal_time: Optional[str] = None
+    food_name: Optional[str] = None
+    portion: Optional[float] = None
+    additional_info: Optional[Dict[str, Any]] = None
 
 class FoodAgent:
     """음식 관련 에이전트"""
     
     DEFAULT_MODEL = "gpt-4o-mini"
     
-    def __init__(self, model_name: str = DEFAULT_MODEL):
+    def __init__(self, model: ChatOpenAI = None):
         """음식 에이전트 초기화"""
-        self.model_name = self._validate_model_name(model_name)
-        self.llm = self._initialize_llm()
+        if model is None:
+            self.model_name = self.DEFAULT_MODEL
+            self.llm = self._initialize_llm()
+        else:
+            self.llm = model
+            self.model_name = model.model_name if hasattr(model, 'model_name') else self.DEFAULT_MODEL
+            
         self.prompts = self._initialize_prompts()
-        self.subagents = self._initialize_subagents()
+        self.workflow = DietWorkflow(self.llm)
     
     def _validate_model_name(self, model_name: str) -> str:
         """모델 이름 유효성 검사"""
@@ -68,26 +93,16 @@ class FoodAgent:
             "intent": ChatPromptTemplate.from_messages([
                 ("system", """사용자의 의도를 분석하는 AI 어시스턴트입니다.
                 다음 형식의 JSON으로 응답해주세요:
-                {{
+                {
                     "intent": "MEAL_INPUT/MEAL_RECOMMENDATION/NUTRIENT_ANALYSIS/MEAL_LOOKUP/OTHER",
                     "confidence": 0.0-1.0,
-                    "details": {{
+                    "details": {
                         "meal_type": "아침/점심/저녁/간식",
                         "foods": ["음식1", "음식2", ...]
-                    }}
-                }}"""),
+                    }
+                }"""),
                 ("human", "{input}")
             ])
-        }
-    
-    def _initialize_subagents(self) -> Dict[str, Any]:
-        """하위 에이전트 초기화"""
-        return {
-            IntentType.MEAL_INPUT: MealInputAgent(self.model_name),
-            IntentType.MEAL_RECOMMENDATION: BalancedMealAgent(self.model_name),
-            IntentType.NUTRIENT_ANALYSIS: NutrientAgent(self.model_name),
-            IntentType.MEAL_LOOKUP: BalancedMealAgent(self.model_name),
-            IntentType.OTHER: BalancedMealAgent(self.model_name)
         }
     
     def _parse_intent(self, response: AIMessage) -> Optional[Intent]:
@@ -95,118 +110,198 @@ class FoodAgent:
         try:
             data = json.loads(response.content)
             return Intent(
-                type=IntentType[data["intent"]],
+                type=IntentType(data["intent"]),
                 confidence=float(data["confidence"]),
                 details=data.get("details", {})
             )
         except (json.JSONDecodeError, KeyError, ValueError):
             return None
     
-    async def _analyze_intent(self, user_input: str) -> Optional[Intent]:
-        """사용자 의도 분석"""
-        chain = self.prompts["intent"] | self.llm
-        response = await chain.ainvoke({"input": user_input})
-        
-        if not isinstance(response, AIMessage):
-            return None
-        
-        return self._parse_intent(response)
+    async def _analyze_intent(self, user_input: str) -> Intent:
+        """사용자 입력을 분석하여 의도를 파악합니다."""
+        try:
+            logger.info(f"의도 분석 시작: {user_input}")
+            
+            # 의도 분석 프롬프트 가져오기
+            prompt = get_analyze_input_prompt(user_input)
+            
+            # 의도 분석 체인 구성
+            chain = (
+                ChatPromptTemplate.from_messages([
+                    ("system", "당신은 사용자의 의도를 분석하는 전문가입니다. 반드시 JSON 형식으로 응답해야 합니다."),
+                    ("user", "{input}")
+                ])
+                | self.llm
+                | JsonOutputParser()
+            )
+            
+            # 의도 분석 실행
+            result = await chain.ainvoke({"input": f"{user_input}\n\n{prompt}"})
+            logger.info(f"의도 분석 결과: {result}")
+            
+            # 결과가 문자열인 경우 JSON으로 파싱 시도
+            if isinstance(result, str):
+                try:
+                    import json
+                    # 문자열에서 JSON 부분만 추출
+                    import re
+                    json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(0)
+                        result = json.loads(json_str)
+                        logger.info(f"문자열에서 JSON 추출 후 파싱: {result}")
+                    else:
+                        # JSON이 없는 경우 기본 의도 설정
+                        logger.warning("응답에서 JSON을 찾을 수 없습니다.")
+                        result = {
+                            "intent": "unknown",
+                            "meal_time": None,
+                            "food_name": "",
+                            "portion": "",
+                            "additional_info": {}
+                        }
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON 파싱 실패: {str(e)}")
+                    # 기본 의도 설정
+                    result = {
+                        "intent": "unknown",
+                        "meal_time": None,
+                        "food_name": "",
+                        "portion": "",
+                        "additional_info": {}
+                    }
+            
+            # 의도 분석 결과에서 IntentType 추출
+            intent_type_str = result.get("intent", "unknown").lower()
+            try:
+                intent_type = parse_intent_type(intent_type_str)
+            except ValueError:
+                logger.warning(f"알 수 없는 의도 유형: {intent_type_str}")
+                intent_type = IntentType.UNKNOWN
+            
+            # Intent 객체 생성
+            intent = Intent(
+                type=intent_type,
+                meal_time=result.get("meal_time"),
+                food_name=result.get("food_name", ""),
+                portion=result.get("portion", ""),
+                additional_info=result.get("additional_info", {})
+            )
+            
+            logger.info(f"분석된 의도: {intent}")
+            return intent
+            
+        except Exception as e:
+            logger.error(f"의도 분석 중 오류 발생: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Intent(
+                type=IntentType.UNKNOWN,
+                meal_time=None,
+                food_name="",
+                portion="",
+                additional_info={}
+            )
     
-    def _get_subagent(self, intent_type: IntentType) -> Optional[Any]:
-        """하위 에이전트 조회"""
-        return self.subagents.get(intent_type)
+    async def process(self, user_input: str) -> Dict[str, Any]:
+ 
+        user_id=3;
+        print(f"사용자 정보 조회 시작: {user_id}")
+        user_info = await get_user_info(user_id)
+        print(f"사용자 정보: {user_info}")
+        model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """
+            당신은 영양 전문가입니다. 아래의 사용자 정보를 분석하여 최적의 답변을 내주세요.
+             
+            사용자 정보:
+            {user_info}
+            
+            주의사항:
+            1. 식단 유형은 사용자의 목표에 맞게 선택합니다.
+            2. 각 식사는 균형 잡힌 영양소 비율을 가져야 합니다.
+            """),
+            ("user", "{message}"),
+        ])
+        chain = prompt | model
+        response = await chain.ainvoke({
+            "user_info": str(user_info),  # user_info가 dict면 str로 변환 필요
+            "message": user_input,
+        })
+        return {"type": "food", "response": response.content} 
+    #     """
+    #     사용자 입력을 처리하고 응답을 생성합니다.
+        
+    #     Args:
+    #         user_input: 사용자 입력 텍스트
+            
+    #     Returns:
+    #         Dict[str, Any]: 처리 결과
+    #     """
+    #     try:
+    #         member_id = "3" 
+    #         logger.info(f"FoodAgent.process 시작: user_input={user_input}, member_id={member_id}")
+            
+    #         # 의도 분석
+    #         intent = await self._analyze_intent(user_input)
+    #         logger.info(f"분석된 의도: {intent}")
+            
+    #         # 워크플로우 실행
+    #         result = await run_food_workflow(
+    #             input_text=user_input,
+    #             member_id=str(member_id),
+    #             meal_type=intent.meal_time if intent.meal_time else "",
+    #             model=self.llm
+    #         )
+            
+    #         logger.info(f"워크플로우 실행 결과: {result}")
+    #         return result
+            
+        # except Exception as e:
+        #     logger.error(f"FoodAgent.process 실행 중 오류 발생: {str(e)}")
+        #     logger.error(traceback.format_exc())
+        #     return {
+        #         "status": "error",
+        #         "error": str(e)
+        #     }
     
+    async def process_input(self, user_input: str, member_id: str) -> Dict[str, Any]:
+        """
+        사용자 입력을 처리합니다.
+        
+        Args:
+            user_input: 사용자 입력
+            member_id: 사용자 ID
+            
+        Returns:
+            처리 결과
+        """
+        try:
+            # 입력 검증
+            if not user_input or not member_id:
+                return {"error": "입력이 유효하지 않습니다."}
+                
+            # 워크플로우 실행
+            result = await run_food_workflow(
+                input_text=user_input,
+                member_id=member_id,
+                model=self.llm  # 초기화된 LLM을 워크플로우에 전달
+            )
+            
+            return result
+            
+        except Exception as e:
+            return {"error": f"입력 처리 중 오류 발생: {str(e)}"}
+            
     def _create_error_response(self, message: str) -> Dict[str, Any]:
         """에러 응답 생성"""
         return {
             "type": "food",
             "response": f"죄송합니다. {message}"
         }
-    
-    async def process(self, user_input: str, user_id: str = "1") -> Dict[str, Any]:
-        """사용자 입력 처리"""
-        try:
-            # LLM을 사용하여 의도 분석
-            intent_analysis = await self._analyze_intent_with_llm(user_input)
-            print(f"의도 분석 결과: {intent_analysis}")  # 디버깅용 로그 추가
-            
-            # 식사 타입 추출
-            meal_type = intent_analysis.get("meal_time", "간식")
-            
-            # 의도에 따른 처리
-            if intent_analysis["intent"] == "식사 기록":
-                # 식사 입력 처리
-                meal_input_agent = self._get_subagent(IntentType.MEAL_INPUT)
-                if meal_input_agent:
-                    return await meal_input_agent.process(
-                        user_input=user_input,
-                        user_id=user_id,
-                        meal_type=meal_type
-                    )
-                else:
-                    return self._create_error_response("식사 입력 처리를 위한 에이전트를 찾을 수 없습니다.")
-            elif intent_analysis["intent"] == "식단 추천":
-                # 식단 추천 처리
-                meal_recommendation_agent = self._get_subagent(IntentType.MEAL_RECOMMENDATION)
-                if meal_recommendation_agent:
-                    return await meal_recommendation_agent.process(
-                        user_input=user_input,
-                        user_id=user_id
-                    )
-                else:
-                    return self._create_error_response("식단 추천을 위한 에이전트를 찾을 수 없습니다.")
-            else:
-                return self._create_error_response("이해하지 못했습니다. 식사 입력이나 식단 추천을 요청해주세요.")
-            
-        except Exception as e:
-            print(f"입력 처리 중 오류 발생: {e}")
-            return self._create_error_response("처리 중 오류가 발생했습니다.")
-            
-    async def _analyze_intent_with_llm(self, user_input: str) -> Dict[str, Any]:
-        """LLM을 사용하여 사용자 입력의 의도를 분석"""
-        try:
-            prompt = get_analyze_input_prompt(user_input)
-            # print(f"의도 분석 프롬프트: {prompt}")  # 디버깅용 로그 추가
-            
-            response = await self.llm.ainvoke(prompt)
-            # print(f"LLM 응답: {response.content}")  # 디버깅용 로그 추가
-            
-            # JSON 부분만 추출
-            start_idx = response.content.find('{')
-            end_idx = response.content.rfind('}') + 1
-            if start_idx == -1 or end_idx == 0:
-                raise ValueError("JSON 형식이 올바르지 않습니다.")
-            
-            json_str = response.content[start_idx:end_idx]
-            result = json.loads(json_str)
-            # print(f"파싱된 JSON: {result}")  # 디버깅용 로그 추가
-            
-            # 기본값 설정
-            default_values = {
-                "intent": "식사 기록",
-                "meal_time": "간식",
-                "food_name": "",
-                "portion": "",
-                "additional_info": {}
-            }
-            
-            # 값이 없는 필드는 기본값으로 설정
-            for key, default_value in default_values.items():
-                if key not in result or result[key] is None:
-                    result[key] = default_value
-            
-            return result
-            
-        except json.JSONDecodeError as e:
-            print(f"JSON 파싱 오류: {e}")
-            return default_values
-        except Exception as e:
-            print(f"의도 분석 중 오류 발생: {e}")
-            return default_values
 
 class AgentState(BaseModel):
     """에이전트 상태"""
-    user_id: str = Field(default="")
+    member_id: str = Field(default="")
     meal_type: str = Field(default="")
     food_input: str = Field(default="")
     meal_items: List[Dict[str, Any]] = Field(default_factory=list)
