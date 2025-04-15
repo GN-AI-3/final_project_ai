@@ -111,25 +111,26 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
         
         result = execute_query(query)
         
-        if isinstance(result, list) and len(result) > 0 and isinstance(result[0], tuple) and len(result[0]) > 0:
-            reservation_id = result[0][0]
-            formatted_start = start_dt.strftime("%Y년 %m월 %d일 %H시")
-            formatted_end = end_dt.strftime("%Y년 %m월 %d일 %H시")
-            
-            response = {
-                "success": True,
-                "reservation": {
-                    "reservation_id": reservation_id,
-                    "start_time": formatted_start,
-                    "end_time": formatted_end
+        # 결과가 문자열인 경우 처리
+        if isinstance(result, str):
+            if "데이터가 없습니다" in result:
+                return json.dumps({
+                    "success": False,
+                    "error": "예약 생성에 실패했습니다."
+                }, ensure_ascii=False)
+            else:
+                # 성공적으로 추가된 경우
+                formatted_start = start_dt.strftime("%Y년 %m월 %d일 %H시")
+                formatted_end = end_dt.strftime("%Y년 %m월 %d일 %H시")
+                
+                response = {
+                    "success": True,
+                    "reservation": {
+                        "start_time": formatted_start,
+                        "end_time": formatted_end
+                    }
                 }
-            }
-            return json.dumps(response, ensure_ascii=False)
-        else:
-            return json.dumps({
-                "success": False,
-                "error": "예약 생성에 실패했습니다."
-            }, ensure_ascii=False)
+                return json.dumps(response, ensure_ascii=False)
             
     except Exception as e:
         return json.dumps({
@@ -305,7 +306,7 @@ def modify_schedule(
                     "error": error
                 }, ensure_ascii=False)
             
-            # 예약 상태 변경
+            # 예약 변경
             update_query = f"""
             UPDATE pt_schedule
             SET status = 'CHANGED',

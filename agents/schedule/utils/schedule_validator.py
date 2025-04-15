@@ -6,10 +6,12 @@ def check_same_day(start_dt: datetime) -> str:
     try:
         now = datetime.now()
         
+        # 같은 날짜이고 현재 시간보다 이전인 경우에만 거부
         if (start_dt.year == now.year and 
             start_dt.month == now.month and 
-            start_dt.day == now.day):
-            return "죄송해요. 당일 예약은 불가능해요. 오늘 이후의 날짜를 선택해주세요."
+            start_dt.day == now.day and
+            start_dt <= now):
+            return "죄송해요. 당일 예약은 현재 시간 이후로만 가능해요. 다른 시간을 선택해주세요."
         return None
     except Exception as e:
         return f"당일 예약 확인 중 오류가 발생했습니다: {str(e)}"
@@ -19,8 +21,11 @@ def check_future_date(start_dt: datetime) -> str:
     try:
         now = datetime.now()
         
-        if start_dt <= now:
-            return "죄송해요. 과거 시간으로는 예약할 수 없어요. 오늘 이후의 날짜를 선택해주세요."
+        # 날짜만 비교 (시간 제외)
+        if (start_dt.year < now.year or
+            (start_dt.year == now.year and start_dt.month < now.month) or
+            (start_dt.year == now.year and start_dt.month == now.month and start_dt.day < now.day)):
+            return "죄송해요. 과거 날짜로는 예약할 수 없어요. 오늘 이후의 날짜를 선택해주세요."
         return None
     except Exception as e:
         return f"미래 날짜 확인 중 오류가 발생했습니다: {str(e)}"

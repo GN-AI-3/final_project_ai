@@ -54,8 +54,7 @@ class ScheduleChatbot:
         formatted_date, _ = DateManager.get_formatted_date()
         system_prompt = (
             f"오늘은 {formatted_date}입니다.\n\n"
-            f"{system_prompt}\n\n"
-            "스케줄은 오늘 이후의 날짜로만 가능해요."
+            f"{system_prompt}"
         )
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
