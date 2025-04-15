@@ -1,0 +1,70 @@
+-- 3. 예약 번호 생성을 위한 함수 (간소화된 버전)
+CREATE OR REPLACE FUNCTION generate_reservation_id()
+RETURNS VARCHAR AS $$
+DECLARE
+    random_digits VARCHAR;
+BEGIN
+    -- 5자리 랜덤 숫자 생성
+    random_digits := LPAD(FLOOR(RANDOM() * 100000)::TEXT, 5, '0');
+    -- YYMMDD_5자리랜덤 형태로 반환
+    RETURN TO_CHAR(CURRENT_DATE, 'YYMMDD') || '_' || random_digits;
+END;
+$$ LANGUAGE plpgsql;
+-- 4. 트리거에서 사용할 함수 생성
+CREATE OR REPLACE FUNCTION set_reservation_id()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.reservation_id := generate_reservation_id();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- 5. 트리거 생성
+CREATE TRIGGER set_reservation_id_trigger
+    BEFORE INSERT ON pt_schedule
+    FOR EACH ROW
+    EXECUTE FUNCTION set_reservation_id();
+-- 6. 인덱스 생성
+CREATE INDEX idx_pt_schedule_pt_contract_id ON pt_schedule(pt_contract_id);
+CREATE INDEX idx_pt_schedule_start_time ON pt_schedule(start_time);
+CREATE INDEX idx_pt_schedule_status ON pt_schedule(status);
+CREATE INDEX idx_pt_schedule_query ON pt_schedule(pt_contract_id, start_time, status);
+
+-- 트리거 함수 생성
+CREATE OR REPLACE FUNCTION update_pt_contract_status()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- used_count가 total_count와 같아지면 status를 'COMPLETED'로 변경
+    IF NEW.used_count = NEW.total_count THEN
+        NEW.status := 'COMPLETED';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 트리거 생성
+CREATE TRIGGER check_pt_contract_completion
+    BEFORE UPDATE ON pt_contract
+    FOR EACH ROW
+    EXECUTE FUNCTION update_pt_contract_status();
+
+-- 트리거 함수 생성
+CREATE OR REPLACE FUNCTION update_pt_contract_expired_status()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- used_count가 total_count보다 작고, end_date가 현재 시간보다 지났을 때
+    IF NEW.used_count < NEW.total_count AND NEW.end_date < CURRENT_TIMESTAMP THEN
+        NEW.status := 'EXPIRED';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 트리거 생성
+CREATE TRIGGER check_pt_contract_expiration
+    BEFORE UPDATE ON pt_contract
+    FOR EACH ROW
+    EXECUTE FUNCTION update_pt_contract_expired_status();
+
+CREATE INDEX idx_pt_contract_member ON pt_contract(member_id);
+CREATE INDEX idx_pt_contract_trainer ON pt_contract(trainer_id);
+CREATE INDEX idx_pt_contract_remain ON pt_contract(used_count);

@@ -1,5 +1,6 @@
 from langchain.agents import tool
-from core.database import db
+from typing import Dict, Any, List
+from ..core.database import db
 
 @tool
 def get_schema():
