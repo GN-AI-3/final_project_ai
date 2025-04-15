@@ -1,7 +1,6 @@
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_teddynote.graphs import visualize_graph
 
 from .core.state import State, should_continue
 from .core.nodes import create_ai_assistant_node, user_node
@@ -35,28 +34,4 @@ def build_graph():
     )
 
     graph_builder.set_entry_point("예약 도우미")
-    return graph_builder.compile()
-
-
-def run_graph_simulation():
-    """그래프 시뮬레이션을 실행합니다."""
-    simulation = build_graph()
-    visualize_graph(simulation)
-
-    config = RunnableConfig(
-        recursion_limit=2147483647, 
-        configurable={"thread_id": "7"}
-    )
-
-    # supervisor로부터 최초로 받는 메시지(input)
-    inputs = {
-        "messages": [HumanMessage(content="안녕하세요?")]
-    }
-
-    # 그래프 스트리밍 실행
-    for chunk in simulation.stream(inputs, config):
-        pass
-
-
-if __name__ == "__main__":
-    run_graph_simulation() 
+    return graph_builder.compile() 

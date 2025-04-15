@@ -113,7 +113,10 @@ class ScheduleChatbot:
             
             return response["output"]
         except Exception as e:
-            return f"오류가 발생했습니다: {str(e)}"
+            error_msg = str(e)
+            if "timeout" in error_msg.lower():
+                return "응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
+            return f"오류가 발생했습니다: {error_msg}"
 
 
 def call_chatbot(messages: List[Dict[str, Any]], session_id: str = "default") -> str:

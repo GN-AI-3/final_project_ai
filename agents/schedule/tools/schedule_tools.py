@@ -38,31 +38,9 @@ def get_user_schedule(input: str = "") -> str:
         
         if isinstance(results, str):
             return json.dumps({
-                "success": False,
-                "error": results
-            }, ensure_ascii=False)
-            
-        if isinstance(results, list):
-            schedules = []
-            for result in results:
-                if isinstance(result, tuple) and len(result) >= 2:
-                    start_time, reservation_id = result
-                    if isinstance(start_time, datetime):
-                        formatted_time = start_time.strftime("%Y년 %m월 %d일 %H시")
-                    else:
-                        formatted_time = str(start_time)
-                    
-                    schedules.append({
-                        "start_time": formatted_time,
-                        "reservation_id": reservation_id
-                    })
-            
-            response = {
                 "success": True,
-                "schedules": schedules,
-                "total_count": len(schedules)
-            }
-            return json.dumps(response, ensure_ascii=False)
+                "results": results
+            }, ensure_ascii=False)
         
         return json.dumps({
             "success": False,
