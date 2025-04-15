@@ -1,29 +1,19 @@
 """
-Supervisor 모듈
-메시지 분류, 에이전트 관리, 응답 생성 등의 기능을 제공하는 모듈입니다.
+Supervisor Modules 패키지
+Supervisor에서 사용하는 모듈화된 컴포넌트들을 제공합니다.
 """
 
 from supervisor_modules.classification.classifier import classify_message
-from supervisor_modules.agents_manager.agents_executor import execute_agents, route_message, process_message, register_agent
-from supervisor_modules.state.state_manager import SupervisorState
-from supervisor_modules.response.response_generator import generate_response, generate_response_with_insights, generate_response_with_semantic_search
-from common_prompts.prompts import AGENT_CONTEXT_PROMPT, QDRANT_INSIGHTS_PROMPT, QDRANT_SEARCH_PROMPT, CATEGORY_CONTEXT_PROMPT
-from supervisor_modules.utils.qdrant_helper import get_user_insights, search_relevant_conversations
+from supervisor_modules.agents_manager.agents_executor import register_agent, get_registered_agents, get_agent_info
+from supervisor_modules.utils.context_builder import build_agent_context, format_context_for_agent
+from supervisor_modules.response.response_generator import generate_response
 
 __all__ = [
     'classify_message',
-    'execute_agents',
-    'route_message',
-    'process_message',
     'register_agent',
-    'AGENT_CONTEXT_PROMPT',
-    'QDRANT_INSIGHTS_PROMPT',
-    'QDRANT_SEARCH_PROMPT',
-    'CATEGORY_CONTEXT_PROMPT',
-    'SupervisorState',
-    'generate_response',
-    'generate_response_with_insights',
-    'generate_response_with_semantic_search',
-    'get_user_insights',
-    'search_relevant_conversations'
+    'get_registered_agents',
+    'get_agent_info',
+    'build_agent_context',
+    'format_context_for_agent',
+    'generate_response'
 ] 

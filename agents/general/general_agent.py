@@ -45,7 +45,8 @@ class GeneralAgent(BaseAgent):
             # 프롬프트에 필요한 변수 설정
             variables = {
                 "message": message,
-                "chat_history": formatted_history
+                "chat_history": formatted_history,
+                "context_info": context_info
             }
         else:
             # 대화 내역이 없지만 문맥 정보가 있는 경우
@@ -54,7 +55,10 @@ class GeneralAgent(BaseAgent):
                     ("system", system_prompt),
                     ("human", message)
                 ])
-                variables = {"message": message}
+                variables = {
+                    "message": message,
+                    "context_info": context_info
+                }
             else:
                 # 대화 내역과 문맥 정보가 모두 없는 경우 간단한 프롬프트 사용
                 prompt = ChatPromptTemplate.from_messages([

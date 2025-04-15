@@ -1,8 +1,8 @@
 """
-Agents Manager 모듈
-에이전트 실행 및 관리 기능을 제공합니다.
+에이전트 매니저 모듈
+에이전트 실행 및 관리를 위한 기능을 제공합니다.
 """
 
-from .agents_executor import execute_agents, route_message, process_message, register_agent, AGENT_CONTEXT_PROMPT
+from .agents_executor import register_agent, get_registered_agents, get_agent_info
 
-__all__ = ['execute_agents', 'route_message', 'process_message', 'register_agent', 'AGENT_CONTEXT_PROMPT'] 
+__all__ = ['register_agent', 'get_registered_agents', 'get_agent_info'] 
