@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from .core.state import State, should_continue
+from .core.state import State
 from .core.nodes import create_ai_assistant_node, user_node
 from .chatbot import call_chatbot
 
@@ -22,16 +22,6 @@ def build_graph():
 
     # 엣지 정의
     graph_builder.add_edge("예약 도우미", "사용자")
-
-    # 조건부 엣지 정의
-    graph_builder.add_conditional_edges(
-        "사용자",
-        should_continue,
-        {
-            "end": END,
-            "continue": "예약 도우미",
-        },
-    )
 
     graph_builder.set_entry_point("예약 도우미")
     return graph_builder.compile() 

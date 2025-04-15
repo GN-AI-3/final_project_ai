@@ -12,17 +12,3 @@ class State(TypedDict):
         messages: 대화 메시지 리스트
     """
     messages: Annotated[list, add_messages]
-
-
-def should_continue(state: State) -> str:
-    """대화를 계속할지 결정합니다.
-    
-    Args:
-        state: 현재 대화 상태
-        
-    Returns:
-        str: 'end' 또는 'continue'
-    """
-    if state["messages"][-1].content == "종료":
-        return "end"
-    return "continue" 

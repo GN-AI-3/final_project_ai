@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional
+import json
 
 from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
@@ -111,12 +112,21 @@ class ScheduleChatbot:
                 "session_id": session_id
             })
             
-            return response["output"]
+            return json.dumps({
+                "success": True,
+                "message": response["output"]
+            })
         except Exception as e:
             error_msg = str(e)
             if "timeout" in error_msg.lower():
-                return "응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
-            return f"오류가 발생했습니다: {error_msg}"
+                return json.dumps({
+                    "success": False,
+                    "message": "응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
+                })
+            return json.dumps({
+                "success": False,
+                "message": f"오류가 발생했습니다: {error_msg}"
+            })
 
 
 def call_chatbot(messages: List[Dict[str, Any]], session_id: str = "default") -> str:
@@ -136,6 +146,9 @@ def call_chatbot(messages: List[Dict[str, Any]], session_id: str = "default") ->
     elif hasattr(last_message, "content"):
         message_content = last_message.content
     else:
-        return "죄송합니다. 메시지 형식이 올바르지 않습니다."
+        return json.dumps({
+            "success": False,
+            "message": "죄송합니다. 메시지 형식이 올바르지 않습니다."
+        })
         
     return chatbot.process_message(message_content, session_id)

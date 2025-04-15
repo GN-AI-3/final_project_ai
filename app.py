@@ -76,7 +76,7 @@ async def root():
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     # 이메일 정보가 있으면 사용, 없으면 기본값 사용
     user_email = request.email or "anonymous@example.com"
-    logger.info(f"채팅 요청 받음 - 사용자: {user_email}, 메시지: {request.message[:50]}...")
+    logger.info(f"채팅 요청 받음 - 사용자: {user_email}, 메시지: {request.message[:50]}")
     
     try:
         # 기본 사용자 ID 사용 (향후 사용자 이메일로 조회 가능)
