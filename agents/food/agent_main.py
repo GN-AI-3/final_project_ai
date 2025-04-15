@@ -76,11 +76,17 @@ class FoodAgent(BaseModel):
         else:
             self.model = model
             
-    async def process(self, user_input: str) -> Dict[str, Any]:
-            user_id=3;
+    async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+            # 이메일을 사용해 사용자 ID 결정 (테스트를 위해 임시로 3으로 하드코딩)
+            user_id = 3
+            if email:
+                print(f"이메일로 사용자 조회(미구현): {email}")
+                # 실제 이메일->ID 변환 코드 필요
+            
             print(f"사용자 정보 조회 시작: {user_id}")
-            user_info = await get_user_info(user_id)
+            user_info = await get_user_info(str(user_id))
             print(f"사용자 정보: {user_info}")
+            
             prompt = ChatPromptTemplate.from_messages([
                 ("system", """
                 당신은 영양 전문가입니다. 아래의 사용자 정보를 분석하여 최적의 답변을 내주세요.
@@ -97,7 +103,7 @@ class FoodAgent(BaseModel):
             chain = prompt | self.model
             response = await chain.ainvoke({
                 "user_info": str(user_info),  # user_info가 dict면 str로 변환 필요
-                "message": user_input,
+                "message": message,
             })
             print(f"응답: {response.content}")
             return {"type": "food", "response": response.content}

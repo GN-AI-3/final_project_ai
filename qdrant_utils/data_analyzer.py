@@ -44,11 +44,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_URL = "https://9429a5d7-55d9-43fa-8ad7-8e6cfcd37e22.europe-west3-0.gcp.cloud.qdrant.io:6333"
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "chat_insights")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_HOST = os.getenv("DB_HOST")
+POSTGRES_PORT = os.getenv("DB_PORT")
+POSTGRES_DB = os.getenv("DB_DB")
+POSTGRES_USER = os.getenv("DB_USER")
+POSTGRES_PASSWORD = os.getenv("DB_PASSWORD")
 
 # OpenAI 클라이언트 초기화
 client = OpenAI(api_key=OPENAI_API_KEY)
