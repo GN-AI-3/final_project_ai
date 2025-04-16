@@ -41,8 +41,7 @@ async def build_agent_context(
         message=message
     )
 
-    # 프롬프트 로깅 (200자만 출력)
-    print(f"\n[CONTEXT_BUILDER] 프롬프트 (일부): {prompt_text[:200]}...")
+    # 프롬프트 로깅 (debug 레벨로만 기록)
     logger.debug(f"[build_agent_context] 전체 프롬프트: {prompt_text}")
 
     try:
@@ -54,8 +53,7 @@ async def build_agent_context(
 
         raw = response.content.strip()
         
-        # 원본 응답 로깅
-        print(f"[CONTEXT_BUILDER] 원본 응답: {raw[:300]}...")
+        # 원본 응답 로깅 (debug 레벨로만 기록)
         logger.debug(f"[build_agent_context] 전체 응답: {raw}")
 
         # ```json 코드블록 제거
@@ -69,8 +67,7 @@ async def build_agent_context(
         context_data = json.loads(json_text)
         logger.info("[build_agent_context] 문맥 정보 생성 완료")
         
-        # 최종 파싱된 데이터 출력
-        print(f"[CONTEXT_BUILDER] 파싱된 문맥 데이터: {json.dumps(context_data, ensure_ascii=False)}")
+        # 최종 파싱된 데이터 로깅 (debug 레벨로만 기록)
         logger.debug(f"[build_agent_context] 생성된 문맥: {context_data}")
 
         # 최종 JSON 문자열로 반환
@@ -79,8 +76,7 @@ async def build_agent_context(
     except Exception as e:
         logger.error("[build_agent_context] 오류 발생: %s", str(e))
         logger.error(traceback.format_exc())
-        print(f"[CONTEXT_BUILDER] 오류 발생: {str(e)}")
-
+        
         # 실패 시 기본 구조 반환
         return json.dumps({"context_summary": "문맥 요약 실패"}, ensure_ascii=False)
     finally:

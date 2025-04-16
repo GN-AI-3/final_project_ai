@@ -54,6 +54,8 @@ QDRANT_SEARCH_PROMPT = """당신은 전문 AI 피트니스 코치입니다. 사�
 
 답변은 항상 친절하고 전문적이어야 하며, 정확한 정보를 제공해야 합니다. 이전에 제공했던 조언이나 정보가 있다면 이를 기억하고 언급해 일관성을 유지하세요."""
 
+
+
 # 카테고리 분류를 위한 맥락 고려 프롬프트
 CATEGORY_ROUTING_PROMPT = """
 당신은 메시지를 분류(라우팅)하는 전문가입니다.
@@ -66,7 +68,7 @@ CATEGORY_ROUTING_PROMPT = """
 4. motivation
 5. general
 
-📌 중요 지침:
+중요 지침:
 - "context_info"에서 이미 운동(스트레칭, 헬스 등)이나 식단(칼로리, 음식 등) 같은 특정 주제가 명시됐다면,
   새 메시지가 명백히 다른 주제를 언급하지 않는 한 해당 카테고리를 우선 선택하세요.
 - 숫자 참조(예: "2번", "세 번째")가 등장하면, 문맥 요약에서 해당 항목이 어느 카테고리에 가까운지 검토
@@ -75,7 +77,7 @@ CATEGORY_ROUTING_PROMPT = """
 - 명확히 소속되지 않으면 "general"
 - 최대 2개까지만 반환
 
-🔒 **절대**:
+**절대**:
 1) JSON 배열 외의 어떤 텍스트도 쓰지 마세요.
 2) 두 줄 이상의 JSON 배열을 쓰지 마세요.
 3) JSON 배열을 닫은 뒤 설명이나 추가 문구를 쓰지 마세요.
@@ -101,12 +103,14 @@ AGENT_CONTEXT_BUILDING_PROMPT = """
 당신은 사용자의 대화 내역, 현재 메시지를 기반으로 
 간결한 문맥 정보를 요약하는 도우미입니다.
 
-📌 지침:
+지침:
 - 불필요한 인사, 잡담, 반복 표현은 제거하세요.
 - 직접적인 정보 제공, 추천, 설명은 하지 마세요. (예: "식단 추천" 요청까지만)
 - 숫자 참조(예: "2번", "세 번째")가 있으면 이전 대화 목록을 참고해 구체적인 항목명을 복원하세요.
 - 결과를 JSON 한 덩어리로 반환하세요.
-예: 
+- 아래 예시는 참고용일 뿐이며, 절대로 그대로 복사하거나 반복하지 마세요.
+
+출력 예시 (참고용): 
 ```json
 {{
   "context_summary": "사용자는 운동 루틴 변경과 어깨 통증에 대해 문의함."
@@ -114,9 +118,9 @@ AGENT_CONTEXT_BUILDING_PROMPT = """
 
 `{chat_history}`와 `{message}`가 명확히 들어간 구조로 바꿔줘야 해.
 
-📌 대화 내역: {chat_history}
+대화 내역: {chat_history}
 
-📌 현재 메시지: {message} 
+현재 메시지: {message} 
 """
 
 __all__ = ["AGENT_CONTEXT_PROMPT", "QDRANT_INSIGHTS_PROMPT", "QDRANT_SEARCH_PROMPT", "CATEGORY_CONTEXT_PROMPT", "AGENT_CONTEXT_BUILDING_PROMPT"]

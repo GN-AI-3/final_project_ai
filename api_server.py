@@ -31,6 +31,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 다른 모듈의 로깅 레벨 설정
+logging.getLogger('supervisor_modules').setLevel(logging.INFO)
+logging.getLogger('supervisor').setLevel(logging.INFO)
+logging.getLogger('agents').setLevel(logging.INFO)
+
 # .env 로드 (필요 시)
 from dotenv import load_dotenv
 load_dotenv()
