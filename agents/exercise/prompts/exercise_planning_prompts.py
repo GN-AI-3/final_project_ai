@@ -190,9 +190,12 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 [4] USER ID:
 "{member_id}"
 
+[5] FEEDBACK ON PREVIOUS PLAN:
+"{feedback}"
+
 ---
 
-[5] ***CRITICAL RULES TO FOLLOW*** — YOU MUST COMPLY FULLY:
+[6] ***CRITICAL RULES TO FOLLOW*** — YOU MUST COMPLY FULLY:
 
 **RULE 1: DO NOT GUESS — ONLY USE VERIFIED VALUES**
 - NEVER assume or fabricate values (e.g., id values like `exercise_id = 1`)
@@ -224,16 +227,23 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 
 **RULE 6: USE PLACEHOLDER SYNTAX '{{{{table.column}}}}' FOR PREVIOUS STEP VALUES**
 - When referring to data retrieved in previous steps, you MUST use placeholder syntax like `{{{{exercise.id}}}}`
-- To ensure this does NOT get interpreted as a variable, use double-escaping like `{{{{exercise.id}}}}`
 - These placeholders will be automatically resolved at runtime based on earlier results
-- DO NOT manually insert or guess values like "exercise_id": "REPLACE_WITH_ID" or "exercise_id": "{{{{exercise.id}}}}"
 
 **RULE 7: FINAL OUTPUT MUST BE A JSON ARRAY (NO EXTRA WRAPPER)**
 - The output MUST be a pure JSON array like `[ {{...}}, {{...}} ]`
-- The system will directly execute the array, and any wrapper will break execution
 
 ---
-Now, generate the step-by-step JSON plan.
+
+[7] IF FEEDBACK IS PROVIDED:
+
+- Carefully analyze the feedback and determine what was missing, incorrect, or insufficient in the previous plan.
+- Revise or rebuild the plan so that it directly addresses the issues mentioned in the feedback.
+- You MUST reflect the feedback clearly in your new step-by-step plan.
+- If the feedback indicates a misunderstanding of the user question, correct it now.
+
+---
+
+Now, generate the improved step-by-step JSON plan.
 """
 
 EXERCISE_PLANNING_PROMPT_5 = """

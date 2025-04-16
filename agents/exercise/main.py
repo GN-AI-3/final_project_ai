@@ -43,7 +43,10 @@ class ExerciseAgent(BaseAgent):
         workflow = create_workout_workflow()
 
         initial_state = RoutingState(
-            message=message
+            message=message,
+            user_type="member",
+            member_id=3,
+            trainer_id=1
         )
 
         # 워크플로우 실행

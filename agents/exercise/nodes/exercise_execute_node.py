@@ -1,8 +1,7 @@
-from typing import List, Dict, Any
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 import json
-from ..tools.exercise_routine_tools import master_select_db_multi, web_search, search_exercise_by_name
+from ..tools.exercise_member_tools import master_select_db_multi, web_search, search_exercise_by_name, retrieve_exercise_info_by_similarity
 from ..models.state_models import RoutingState
 import re
 
@@ -50,6 +49,7 @@ def replace_with_context(text, context):
 # ----------------------------
 def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     message = state.message
+    user_type = state.user_type
 
     try:
         plan_data = json.loads(state.plan)
@@ -61,14 +61,27 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     except Exception as e:
         raise ValueError(f"Invalid plan JSON: {e}")
 
-    context = []
+    context = state.context or []
     results = []
 
-    tools = {
+    tools_for_member = {
         "web_search": web_search,
         "master_select_db_multi": master_select_db_multi,
-        "search_exercise_by_name": search_exercise_by_name
+        "search_exercise_by_name": search_exercise_by_name,
+        "retrieve_exercise_info_by_similarity": retrieve_exercise_info_by_similarity
     }
+
+    tools_for_trainer = {
+        "web_search": web_search,
+        "master_select_db_multi": master_select_db_multi,
+        "search_exercise_by_name": search_exercise_by_name,
+        "retrieve_exercise_info_by_similarity": retrieve_exercise_info_by_similarity
+    }
+
+    if user_type == "member":
+        tools = tools_for_member
+    elif user_type == "trainer":
+        tools = tools_for_trainer
 
     for idx, step in enumerate(plan):
         # step이 문자열인 경우 처리
@@ -107,6 +120,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
             print("result: ", result)
         else:
             tool_func = tools.get(tool_name)
+
             if not tool_func:
                 result = f"[ERROR] 등록되지 않은 tool: {tool_name}"
                 print("result: ", result)
@@ -120,6 +134,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
 
         results.append({
             "step": idx + 1,
+            "tool": tool_name,
             "description": description,
             "result": result
         })
@@ -136,7 +151,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     final_llm_input = "\n".join([
         f"사용자 질문: {message}",
         f"지금까지 수집된 정보:\n{json.dumps(context, ensure_ascii=False, indent=2)}",
-        f"최종 목적: 위 정보를 바탕으로 최종 결과를 요약하고 사용자가 이해하기 쉽게 정리해주세요. 단, 질문과 무관한 정보는 제외해야 합니다."
+        f"최종 목적: 위 정보를 바탕으로 사용자가 이해하기 쉽게 정리해서 질문에 답하세요. 단, 질문과 무관한 정보는 제외해야 합니다."
     ])
     final_response = llm.invoke([HumanMessage(content=final_llm_input)])
     final_result = final_response.content
