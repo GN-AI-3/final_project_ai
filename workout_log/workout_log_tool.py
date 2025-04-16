@@ -77,7 +77,6 @@ def add_workout_log(data: dict | str) -> str:
 def modify_workout_log(data: dict | str) -> str:
     """
     이미 존재하는 exercise_record 에 운동 기록을 수정하는 tool.
-    record 수정 시 반드시 sets, reps, weight 모두 있어야 함
     """
     if isinstance(data, str):
         try:

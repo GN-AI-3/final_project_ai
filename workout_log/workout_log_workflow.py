@@ -27,5 +27,5 @@ def create_pt_log_workflow():
 
 if __name__ == "__main__":
     workflow = create_pt_log_workflow()
-    workflow.invoke({"message": "오늘 레그프레스 150kg 10세트 했어 무릎 컨디션 끝내주던데", "memberId": 16, "date": "2025-04-16T05:44:27.333Z"})
+    workflow.invoke({"message": "레그프레스 100kg 하는데 무릎 컨디션 좋았어", "memberId": 16, "date": "2025-04-16T05:44:27.333Z"})
 
