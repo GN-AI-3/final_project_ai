@@ -3,5 +3,5 @@ from pydantic import BaseModel
 
 class ptLogState(BaseModel):
     message: str
-    ptScheduleId: int = 42
+    ptScheduleId: int
     plan: str = None

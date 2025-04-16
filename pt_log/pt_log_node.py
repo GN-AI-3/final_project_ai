@@ -69,7 +69,7 @@ tools = [
         func=modify_workout_log,
         description=(
             "이미 존재하는 PT 로그에서 운동 기록을 수정하는 기능이다. "
-            "사용자의 메시지를 기반으로 다음 JSON 형식으로 정보를 추출해서 호출해야 한다:\n\n"
+            "사용자의 메시지를 기반으로 다음 JSON 형식으로 정보를 추출해서 하나의 json 형식으로 호출해야 한다:\n\n"
             "{\n"
             '    "ptLogId": 101,              // 필수, 현재 PT 로그 ID (숫자)\n'
             '    "exerciseLogId": 10,         // 필수, 수정하려는 운동 로그 ID (숫자)\n'
