@@ -33,9 +33,23 @@ class MotivationAgent(BaseAgent):
     중앙화된 프롬프트 시스템을 사용하여 일관성을 유지합니다.
     도구 기반 아키텍처를 사용하여 감정 분석 및 응답 생성을 자동화합니다.
     """
-    def __init__(self, model: ChatOpenAI):
-        super().__init__(model)
-        self.model = model
+    def __init__(self, model: Optional[ChatOpenAI] = None, llm: Optional[ChatOpenAI] = None):
+        """
+        동기부여 에이전트 초기화
+        
+        Args:
+            model: 레거시 파라미터 이름 (ChatOpenAI 인스턴스)
+            llm: ChatOpenAI 인스턴스
+        """
+        # model과 llm 둘 중 하나는 제공되어야 함
+        if model is None and llm is None:
+            raise ValueError("model 또는 llm 중 하나는 반드시 제공되어야 합니다.")
+            
+        # llm이 제공되었으면 model로 저장
+        model_to_use = llm if llm is not None else model
+        super().__init__(model=model_to_use)
+        self.model = model_to_use
+        
         # 통합 감정 분석 및 응답 생성 모델 설정
         self.unified_model = ChatOpenAI(
             model="gpt-3.5-turbo", 
@@ -52,7 +66,7 @@ class MotivationAgent(BaseAgent):
         )
         logger.info("통합 감정 분석 및 응답 생성 에이전트 초기화 완료")
         
-    async def process(self, message: str, email: Optional[str] = None) -> Dict[str, Any]:
+    async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         사용자 메시지를 처리하고 한 번의 LLM 호출로 감정 분석과 응답을 생성합니다.
         사용자 이메일이 제공된 경우 DB에서 사용자 목표를 가져와 프롬프트에 통합합니다.
@@ -60,11 +74,15 @@ class MotivationAgent(BaseAgent):
         Args:
             message (str): 사용자 메시지
             email (Optional[str]): 사용자 이메일 (DB 조회용)
+            chat_history (Optional[List[Dict[str, Any]]]): 대화 내역 (선택사항)
             
         Returns:
             Dict[str, Any]: 동기부여 응답과 관련 정보
         """
         try:
+            # 대화 내역 사용 (향후 기능)
+            # 현재는 사용하지 않지만, 필요할 경우 여기서 활용할 수 있음
+            
             # 시스템 관련 질문인지 확인 (가장 먼저 체크)
             if is_system_query(message):
                 logger.info("시스템 관련 질문 감지, 보안 응답 제공")

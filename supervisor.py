@@ -1,26 +1,47 @@
-from typing import Dict, Any
-from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
+"""
+Supervisor 모듈 - 모듈화된 코드를 통합하여 사용하는 래퍼 모듈
+여러 모듈화된 컴포넌트를 통합하여 일관된 인터페이스를 제공합니다.
+"""
+
+import logging
 import os
-import openai
+import json
+import uuid
 import traceback
+from typing import Dict, Any, List, Optional
+
+# LangChain/OpenAI
+from langchain_openai import ChatOpenAI
+
+# 모듈화된 컴포넌트 임포트
+from supervisor_modules.classification.classifier import classify_message
+from supervisor_modules.utils.context_builder import build_agent_context, format_context_for_agent
+from supervisor_modules.response.response_generator import generate_response, generate_response_with_insights
+from supervisor_modules.state.state_manager import SupervisorState
+from chat_history_manager import ChatHistoryManager
+from supervisor_modules.agents_manager.agents_executor import register_agent
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 채팅 내역 관리자 초기화
+chat_history_manager = ChatHistoryManager()
 
 class Supervisor:
     def __init__(self, model: ChatOpenAI):
         self.model = model
         
-        # 모델 안정성을 위해 직접 API 키 설정
-        # SecretStr 타입이면 문자열로 변환
+        # 모델 안정성을 위해 API 키 설정
         if hasattr(model, 'openai_api_key'):
             api_key = model.openai_api_key
             # SecretStr 객체인 경우 문자열로 변환
             if hasattr(api_key, 'get_secret_value'):
                 api_key = api_key.get_secret_value()
             os.environ["OPENAI_API_KEY"] = api_key
-            
-        # 직접 OpenAI 클라이언트 초기화
-        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # 에이전트 초기화
+        from agents import ExerciseAgent, FoodAgent, ScheduleAgent, GeneralAgent, MotivationAgent
         
         self.agents = {
             "exercise": ExerciseAgent(model),
@@ -30,84 +51,156 @@ class Supervisor:
             "general": GeneralAgent(model)
         }
         
-    async def analyze_message(self, message: str) -> str:
-        # LangChain 대신 직접 OpenAI API 호출
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": """다음 카테고리 중 하나로 메시지를 분류해주세요:
-                    - schedule: PT 일정 조회, 등록, 수정, 취소
-                    - exercise: PT 일정을 제외한 운동 관련
-                    - food: 식단, 영양, 음식 등
-                    - motivation: 감정적 어려움, 동기부여가 필요한 내용, 우울함, 좌절, 불안 등
-                    - general: 위 카테고리에 속하지 않는 일반적인 대화
-                    
-                    응답은 위 카테고리 중 하나만 반환해주세요."""},
-                    {"role": "user", "content": message}
-                ],
-                temperature=0.3,
-                max_tokens=50
-            )
-            
-            # 응답에서 카테고리 추출
-            response_text = response.choices[0].message.content.strip().lower()
-            
-            # 유효한 카테고리인지 확인
-            valid_categories = ["exercise", "food", "schedule", "motivation", "general"]
-            if response_text not in valid_categories:
-                # 정확히 일치하는 카테고리가 없으면 각 카테고리 키워드 확인
-                if "운동" in message or "체육" in message:
-                    return "exercise"
-                elif "식단" in message or "음식" in message or "영양" in message:
-                    return "food"
-                elif "일정" in message or "계획" in message or "시간" in message:
-                    return "schedule"
-                elif "힘들" in message or "슬프" in message or "우울" in message or "불안" in message or "좌절" in message:
-                    return "motivation"
-                else:
-                    return "general"
-            
-            return response_text
-        except Exception as e:
-            print(f"메시지 분류 오류: {str(e)}")
-            # 오류 발생 시 일반 카테고리로 처리
-            return "general"
+        # agents_executor 모듈에 에이전트 등록
+        for agent_type, agent_instance in self.agents.items():
+            register_agent(agent_type, agent_instance)
+            logger.info(f"에이전트 '{agent_type}' 등록 완료")
     
-    async def process(self, message: str, member_id: int = None) -> Dict[str, Any]:
+    async def process(
+        self, 
+        message: str, 
+        member_id: Optional[str] = None, 
+        trainer_id: Optional[str] = None, 
+        chat_history: Optional[List[Dict[str, Any]]] = None, 
+        user_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        메시지를 처리하고 적절한 에이전트로 라우팅하여 응답을 생성합니다.
+        
+        1) build_agent_context -> 전체 문맥 요약 정보(context_info) 생성
+        2) classify_message -> context_info + message 기반으로 카테고리 결정
+        3) 결정된 카테고리의 에이전트에 메시지 전달 -> 최종 응답 생성
+        """
         try:
-            # 감정 단어를 포함하는 메시지는 우선 동기부여 에이전트로 처리
-            emotional_keywords = ["힘들", "슬프", "우울", "불안", "좌절", "스트레스", "자신감", "의욕", "무기력"]
-            if any(keyword in message.lower() for keyword in emotional_keywords):
-                try:
-                    # member_id 키워드 인자 없이 호출
-                    return await self.agents["motivation"].process(message)
-                except Exception as e:
-                    print(f"동기부여 에이전트 오류: {str(e)}")
-                    # 동기부여 에이전트 오류 시 일반 처리로 진행
+            # 0) 사용자 식별 및 로그
+            if not user_type:
+                user_type = "member" if member_id else "trainer"
+            user_id = member_id or trainer_id
             
-            # 일반 처리 진행
-            category = await self.analyze_message(message)
+            request_id = str(uuid.uuid4())
+            logger.info(f"[{request_id}] 처리 시작 - 메시지: '{message[:50]}...', {user_type}_id: {user_id}")
+            print(f"\n[SUPERVISOR] 처리 시작 - 메시지: '{message[:50]}...', {user_type}_id: {user_id}")
+            
+            # 대화 내역이 없으면 DB에서 불러오기
+            if not chat_history and user_id:
+                try:
+                    chat_history = chat_history_manager.get_recent_messages(user_id, 10)
+                    print(f"[SUPERVISOR] 대화 내역 조회 완료 - {len(chat_history)}개 메시지")
+                except Exception as e:
+                    logger.warning(f"[{request_id}] 대화 내역 조회 실패: {str(e)}")
+                    print(f"[SUPERVISOR] 대화 내역 조회 실패: {str(e)}")
+                    chat_history = []
+            elif not chat_history:
+                chat_history = []
+            
+            # 1) 문맥 정보 생성 (ContextBuilder)
+            print(f"[SUPERVISOR] (1) 문맥 정보 생성 시작")
+            context_info = await build_agent_context(
+                message=message,
+                chat_history=chat_history
+            )
+            print(f"[SUPERVISOR] (1) 문맥 정보 생성 완료: {len(context_info)} chars")
+            
+            # JSON 파싱 시도하여 구조 확인
+            try:
+                context_data = json.loads(context_info)
+                print(f"[SUPERVISOR] 문맥 정보 구조: {list(context_data.keys())}")
+            except:
+                print(f"[SUPERVISOR] 문맥 정보 JSON 파싱 실패")
+            
+            # 2) 메시지 분류 (Classifier) - context_info 활용
+            print(f"[SUPERVISOR] (2) 카테고리 분류 시작")
+            categories, metadata = await classify_message(
+                message=message,
+                context_info=context_info
+            )
+            print(f"[SUPERVISOR] (2) 분류 결과: {categories}")
+            
+            # 첫 번째 카테고리를 기본으로
+            if categories:
+                category = categories[0]
+            else:
+                category = "general"
+            
+            # 3) 에이전트 호출
+            print(f"[SUPERVISOR] (3) 에이전트 '{category}' 실행")
             agent = self.agents.get(category, self.agents["general"])
             
+            # build_agent_context에서 이미 요약정보를 만들어뒀으니,
+            # 그중 핵심 요약만 agent_context로 넘길 수 있음
+            # 예: {"context_summary": "..."} 구조라고 가정
             try:
-                # member_id 키워드 인자 없이 호출
-                return await agent.process(message)
-            except Exception as e:
-                print(f"에이전트 처리 오류 ({category}): {str(e)}")
-                traceback.print_exc()
-                # 오류 발생 시 일반 에이전트로 대체
-                if category != "general":
-                    # member_id 키워드 인자 없이 호출
-                    return await self.agents["general"].process(message)
+                context_data = json.loads(context_info)
+                agent_context = context_data.get("context_summary", "문맥 정보 없음")
+            except:
+                agent_context = "문맥 정보 파싱 실패"
+
+            # 에이전트 호출
+            # (해당 에이전트가 어떤 인자를 받는지에 따라 조정)
+            try:
+                if category == "general":
+                    result = await agent.process(message, context_info=agent_context, chat_history=chat_history)
+                elif category == "schedule":
+                    result = await agent.process(message)
+                elif category in ["exercise", "motivation", "food"]:
+                    result = await agent.process(message, email=user_id, chat_history=chat_history)
                 else:
-                    return {
-                        "type": "general",
-                        "response": "죄송합니다. 요청을 처리하는 중에 문제가 발생했습니다. 다른 질문으로 다시 시도해주세요."
-                    }
-        except Exception as e:
-            print(f"처리 중 오류: {str(e)}")
+                    # 기본 패턴 (모두 전달)
+                    result = await agent.process(message, agent_context=agent_context, chat_history=chat_history)
+                print(f"[SUPERVISOR] (3) 에이전트 응답: '{result.get('response', '')[:60]}...'")
+            except TypeError as e:
+                # 매개변수 문제 시 fallback
+                print(f"[SUPERVISOR] 에이전트 매개변수 오류: {str(e)} -> fallback to minimal")
+                result = await agent.process(message)
+            
+            # 4) 대화 내역에 추가
+            if user_id:
+                # 사용자 메시지 저장
+                user_message_saved = chat_history_manager.add_chat_entry(user_id, "user", message)
+                if not user_message_saved:
+                    logger.warning(f"[{request_id}] 사용자 메시지 저장 실패 - {user_id}")
+                
+                # 에이전트(assistant) 메시지 저장
+                additional_data = {
+                    "agent_type": category,
+                    "selected_agents": categories
+                }
+                
+                # 결과에서 추가 메타데이터가 있다면 저장
+                if isinstance(result, dict):
+                    # emotion_type이 있으면 저장
+                    if "emotion_type" in result:
+                        additional_data["emotion_type"] = result["emotion_type"]
+                    
+                    # 다른 메타데이터가 있으면 추가
+                    if "metadata" in result and isinstance(result["metadata"], dict):
+                        additional_data.update(result["metadata"])
+                
+                assistant_message_saved = chat_history_manager.add_chat_entry(
+                    user_id, 
+                    "assistant",
+                    result.get("response", ""),
+                    additional_data=additional_data
+                )
+                if not assistant_message_saved:
+                    logger.warning(f"[{request_id}] 어시스턴트 메시지 저장 실패 - {user_id}")
+            
+            logger.info(f"[{request_id}] 메시지 처리 완료")
+            print(f"[SUPERVISOR] 메시지 처리 완료 - 응답: '{result.get('response', '')[:50]}...'")
+            
             return {
-                "type": "general",
-                "response": "죄송합니다. 요청을 처리하는 중에 문제가 발생했습니다. 다른 질문으로 다시 시도해주세요."
-            } 
+                "type": result.get("type", category),
+                "response": result.get("response", ""),
+                "selected_agents": categories,
+                "user_type": user_type,
+                "execution_time": metadata.get("classification_time", 0)
+            }
+        
+        except Exception as e:
+            logger.error(f"Supervisor 처리 오류: {str(e)}")
+            logger.error(traceback.format_exc())
+            print(f"[SUPERVISOR] 처리 중 오류: {str(e)}")
+            return {
+                "type": "error",
+                "response": f"죄송합니다. 요청을 처리하는 중 문제가 발생했습니다: {str(e)}"
+            }
