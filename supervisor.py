@@ -79,42 +79,40 @@ class Supervisor:
             
             request_id = str(uuid.uuid4())
             logger.info(f"[{request_id}] 처리 시작 - 메시지: '{message[:50]}...', {user_type}_id: {user_id}")
-            print(f"\n[SUPERVISOR] 처리 시작 - 메시지: '{message[:50]}...', {user_type}_id: {user_id}")
             
             # 대화 내역이 없으면 DB에서 불러오기
             if not chat_history and user_id:
                 try:
                     chat_history = chat_history_manager.get_recent_messages(user_id, 10)
-                    print(f"[SUPERVISOR] 대화 내역 조회 완료 - {len(chat_history)}개 메시지")
+                    logger.info(f"[{request_id}] 대화 내역 조회 완료 - {len(chat_history)}개 메시지")
                 except Exception as e:
                     logger.warning(f"[{request_id}] 대화 내역 조회 실패: {str(e)}")
-                    print(f"[SUPERVISOR] 대화 내역 조회 실패: {str(e)}")
                     chat_history = []
             elif not chat_history:
                 chat_history = []
             
             # 1) 문맥 정보 생성 (ContextBuilder)
-            print(f"[SUPERVISOR] (1) 문맥 정보 생성 시작")
+            logger.info(f"[{request_id}] (1) 문맥 정보 생성 시작")
             context_info = await build_agent_context(
                 message=message,
                 chat_history=chat_history
             )
-            print(f"[SUPERVISOR] (1) 문맥 정보 생성 완료: {len(context_info)} chars")
+            logger.info(f"[{request_id}] (1) 문맥 정보 생성 완료: {len(context_info)} chars")
             
             # JSON 파싱 시도하여 구조 확인
             try:
                 context_data = json.loads(context_info)
-                print(f"[SUPERVISOR] 문맥 정보 구조: {list(context_data.keys())}")
+                logger.debug(f"[{request_id}] 문맥 정보 구조: {list(context_data.keys())}")
             except:
-                print(f"[SUPERVISOR] 문맥 정보 JSON 파싱 실패")
+                logger.warning(f"[{request_id}] 문맥 정보 JSON 파싱 실패")
             
             # 2) 메시지 분류 (Classifier) - context_info 활용
-            print(f"[SUPERVISOR] (2) 카테고리 분류 시작")
+            logger.info(f"[{request_id}] (2) 카테고리 분류 시작")
             categories, metadata = await classify_message(
                 message=message,
                 context_info=context_info
             )
-            print(f"[SUPERVISOR] (2) 분류 결과: {categories}")
+            logger.info(f"[{request_id}] (2) 분류 결과: {categories}")
             
             # 첫 번째 카테고리를 기본으로
             if categories:
@@ -123,7 +121,7 @@ class Supervisor:
                 category = "general"
             
             # 3) 에이전트 호출
-            print(f"[SUPERVISOR] (3) 에이전트 '{category}' 실행")
+            logger.info(f"[{request_id}] (3) 에이전트 '{category}' 실행")
             agent = self.agents.get(category, self.agents["general"])
             
             # build_agent_context에서 이미 요약정보를 만들어뒀으니,
@@ -133,6 +131,7 @@ class Supervisor:
                 context_data = json.loads(context_info)
                 agent_context = context_data.get("context_summary", "문맥 정보 없음")
             except:
+                logger.warning(f"[{request_id}] 문맥 정보 JSON 파싱 실패")
                 agent_context = "문맥 정보 파싱 실패"
 
             # 에이전트 호출
@@ -147,10 +146,10 @@ class Supervisor:
                 else:
                     # 기본 패턴 (모두 전달)
                     result = await agent.process(message, agent_context=agent_context, chat_history=chat_history)
-                print(f"[SUPERVISOR] (3) 에이전트 응답: '{result.get('response', '')[:60]}...'")
+                logger.info(f"[{request_id}] (3) 에이전트 응답: '{result.get('response', '')[:60]}...'")
             except TypeError as e:
                 # 매개변수 문제 시 fallback
-                print(f"[SUPERVISOR] 에이전트 매개변수 오류: {str(e)} -> fallback to minimal")
+                logger.warning(f"[{request_id}] 에이전트 매개변수 오류: {str(e)} -> fallback to minimal")
                 result = await agent.process(message)
             
             # 4) 대화 내역에 추가
@@ -186,7 +185,7 @@ class Supervisor:
                     logger.warning(f"[{request_id}] 어시스턴트 메시지 저장 실패 - {user_id}")
             
             logger.info(f"[{request_id}] 메시지 처리 완료")
-            print(f"[SUPERVISOR] 메시지 처리 완료 - 응답: '{result.get('response', '')[:50]}...'")
+            logger.info(f"[{request_id}] 메시지 처리 완료 - 응답: '{result.get('response', '')[:50]}...'")
             
             return {
                 "type": result.get("type", category),
@@ -199,7 +198,7 @@ class Supervisor:
         except Exception as e:
             logger.error(f"Supervisor 처리 오류: {str(e)}")
             logger.error(traceback.format_exc())
-            print(f"[SUPERVISOR] 처리 중 오류: {str(e)}")
+            logger.info(f"[{request_id}] 처리 중 오류: {str(e)}")
             return {
                 "type": "error",
                 "response": f"죄송합니다. 요청을 처리하는 중 문제가 발생했습니다: {str(e)}"
