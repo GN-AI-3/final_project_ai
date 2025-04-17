@@ -4,4 +4,4 @@ from pydantic import BaseModel
 class ptLogState(BaseModel):
     message: str
     ptScheduleId: int
-    plan: str = None
+    response: str = None

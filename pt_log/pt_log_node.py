@@ -117,5 +117,5 @@ def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
     })
 
     print("pt log response: ", response["output"])
-    state.plan = response["output"]
+    state.response = response["output"]
     return state

@@ -14,6 +14,8 @@ import time
 from datetime import datetime
 import uuid
 
+from pt_log.pt_log_workflow import create_pt_log_workflow
+
 # 대화 내역 관리자 임포트
 from chat_history_manager import ChatHistoryManager
 
@@ -86,6 +88,16 @@ class ChatResponse(BaseModel):
     final_response: str
     execution_time: Optional[float] = None
     emotion_type: Optional[str] = None
+
+class PtLogRequest(BaseModel):
+    message: str
+    ptScheduleId: Optional[int] = 0
+
+class PtLogResponse(BaseModel):
+    ptScheduleId: int
+    timestamp: str
+    final_response: str
+    execution_time: Optional[float] = None
 
 app = FastAPI(
     title="AI 피트니스 코치 API 서버",
@@ -192,6 +204,42 @@ async def chat(chat_request: ChatRequest):
             emotion_type=None
         )
         return error_resp
+
+@app.post("/pt_log")
+async def pt_log(pt_log_request: PtLogRequest):
+    request_id = str(uuid.uuid4())
+    message = pt_log_request.message
+    ptScheduleId = pt_log_request.ptScheduleId
+
+    logger.info(f"[{request_id}] PT 로그 요청 - ptScheduleId: {ptScheduleId}, msg: {message[:50]}...")
+
+    try:
+        workflow = create_pt_log_workflow()
+
+        start_time = datetime.now()
+        result = workflow.invoke({
+            "message": message,
+            "ptScheduleId": ptScheduleId
+        })
+        elapsed = (datetime.now() - start_time).total_seconds()
+
+        logger.info(f"[{request_id}] PT 로그 처리 완료 (소요: {elapsed:.2f}s)")
+
+        return PtLogResponse(
+            ptScheduleId=ptScheduleId,
+            timestamp=datetime.now().isoformat(),
+            final_response=result.get("response", ""),
+            execution_time=elapsed
+        )
+    
+    except Exception as e:
+        logger.error(f"[{request_id}] PT 로그 처리 오류: {str(e)}")
+        return PtLogResponse(
+            ptScheduleId=ptScheduleId,
+            timestamp=datetime.now().isoformat(),
+            final_response=f"처리 중 오류가 발생했습니다: {str(e)}",
+            execution_time=0
+        )
 
 if __name__ == "__main__":
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
