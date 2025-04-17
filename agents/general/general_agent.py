@@ -57,7 +57,8 @@ class GeneralAgent(BaseAgent):
                 ])
                 variables = {
                     "message": message,
-                    "context_info": context_info
+                    "context_info": context_info,
+                    "chat_history": ""
                 }
             else:
                 # 대화 내역과 문맥 정보가 모두 없는 경우 간단한 프롬프트 사용
