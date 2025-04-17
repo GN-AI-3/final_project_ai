@@ -18,6 +18,7 @@ def execute_query(query: str) -> str:
         result = db.run(query)
         if not result or result.strip() == "":
             return "데이터가 없습니다."
+
         return result
     except Exception as e:
         return f"쿼리 실행 중 오류가 발생했습니다: {str(e)}"
