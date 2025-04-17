@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
-from pt_log.pt_log_prompt import PT_LOG_PROMPT
+from pt_log.pt_log_prompt import PT_LOG_PROMPT, PT_LOG_PROMPT_WITH_HISTORY
 from pt_log.pt_log_tool import submit_workout_log, is_workout_log_exist, add_workout_log, is_exercise_log_exist, modify_workout_log
 from pt_log.pt_log_model import ptLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
@@ -94,10 +94,32 @@ def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
 
     message = state.message
     ptScheduleId = state.ptScheduleId
+    chat_history = state.chat_history
 
+    print("chat_history: ", chat_history)
+
+    # 1. 채팅 내역이 있는 경우 메시지 재구성
+    if chat_history and len(chat_history) > 0:
+        reconstruct_prompt = ChatPromptTemplate.from_messages([
+            ("system", PT_LOG_PROMPT_WITH_HISTORY),
+            ("user", "{message}"),
+            ("user", "{chat_history}"),
+        ])
+
+        reconstruct_chain = reconstruct_prompt | llm
+        reconstructed_message = reconstruct_chain.invoke({
+            "chat_history": json.dumps(chat_history, ensure_ascii=False),
+            "message": message
+        }).content
+    else:
+        reconstructed_message = message
+
+    print("reconstructed_message: ", reconstructed_message)
+
+    # 2. 재구성된 메시지로 PT 로그 저장
     prompt = ChatPromptTemplate.from_messages([
         ("system", PT_LOG_PROMPT),
-        ("user", "{message}"),
+        ("user", "{reconstructed_message}"),
         ("user", "{ptScheduleId}"),
         MessagesPlaceholder(variable_name="agent_scratchpad")
     ])
@@ -112,7 +134,7 @@ def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
     )
 
     response = agent_executor.invoke({
-        "message": message,
+        "reconstructed_message": reconstructed_message,
         "ptScheduleId": ptScheduleId,
     })
 
