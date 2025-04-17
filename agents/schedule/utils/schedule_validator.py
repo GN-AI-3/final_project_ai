@@ -1,6 +1,8 @@
 from datetime import datetime
 from ..core.database import execute_query
 
+pt_contract_id = 10
+
 def check_same_day(start_dt: datetime) -> str:
     """당일 예약 여부를 확인합니다."""
     try:
@@ -39,7 +41,7 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         check_query = f"""
         SELECT start_time, end_time
         FROM pt_schedule
-        WHERE pt_contract_id = 7
+        WHERE pt_contract_id = {pt_contract_id}
         AND state = 'confirmed'
         AND (
             (start_time <= '{start_time_str}' AND end_time > '{start_time_str}')
