@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
-from workout_log.workout_log_prompt import WORKOUT_LOG_PROMPT
+from workout_log.workout_log_prompt import WORKOUT_LOG_PROMPT, WORKOUT_LOG_PROMPT2
 from workout_log.workout_log_tool import add_workout_log, modify_workout_log, is_workout_log_exist
 from workout_log.workout_log_model import workoutLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
@@ -61,7 +61,7 @@ def workout_log(state: workoutLogState, llm: ChatOpenAI) -> workoutLogState:
     date = state.date
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", WORKOUT_LOG_PROMPT),
+        ("system", WORKOUT_LOG_PROMPT2),
         ("user", "{message}"),
         ("user", "{memberId}"),
         ("user", "{date}"),
