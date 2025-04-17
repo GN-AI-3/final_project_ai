@@ -6,7 +6,7 @@ from workout_log.workout_log_model import workoutLogState
 
 load_dotenv()
 
-def create_pt_log_workflow():
+def create_workout_log_workflow():
     """개인 운동 기록 워크플로우 생성"""
     llm = ChatOpenAI(
         model="gpt-4o-mini",
@@ -26,6 +26,6 @@ def create_pt_log_workflow():
     return result
 
 if __name__ == "__main__":
-    workflow = create_pt_log_workflow()
+    workflow = create_workout_log_workflow()
     workflow.invoke({"message": "레그프레스하는데 무릎이 아프더라", "memberId": 16, "date": "2025-04-16T05:44:27.333Z"})
 
