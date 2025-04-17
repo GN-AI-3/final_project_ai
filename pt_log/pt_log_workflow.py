@@ -27,5 +27,5 @@ def create_pt_log_workflow():
 
 if __name__ == "__main__":
     workflow = create_pt_log_workflow()
-    workflow.invoke({"message": "오늘 벤치프레스 10kg 10회 5세트랑 레그프레스 8회 4세트 했어"})
+    workflow.invoke({"message": "오늘 레그프레스 150kg 10회 5세트 했어", "ptScheduleId": 42})
 

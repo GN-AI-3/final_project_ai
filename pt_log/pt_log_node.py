@@ -3,7 +3,7 @@ from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
 from pt_log.pt_log_prompt import PT_LOG_PROMPT
-from pt_log.pt_log_tool import submit_workout_log, is_workout_log_exist, add_workout_log
+from pt_log.pt_log_tool import submit_workout_log, is_workout_log_exist, add_workout_log, is_exercise_log_exist, modify_workout_log
 from pt_log.pt_log_model import ptLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
 import json
@@ -55,6 +55,37 @@ tools = [
             "- 'ptLogId'는 현재 PT 세션의 로그 ID이며, 반드시 포함되어야 한다.\n"
             "- 'exerciseId'는 반드시 운동 이름을 검색하여 ID(숫자)로 변환해야 하며, 나머지 값들도 자연어에서 정확히 추출해야 한다."
         )
+    ),
+    Tool(
+        name="is_exercise_log_exist",
+        func=is_exercise_log_exist,
+        description=(
+            "ptLogId와 exerciseId에 해당하는 운동 기록이 존재하는지 확인한다. 존재하면 exerciseLogId를 반환하고, 존재하지 않으면 None을 반환한다.\n"
+            "ptLogId와 exerciseId는 반드시 포함되어야 한다. ptLogId는 현재 PT 세션의 로그 ID이며, exerciseId는 운동 이름을 검색하여 숫자 ID로 변환해야 한다."
+        )
+    ),
+    Tool(
+        name="modify_workout_log",
+        func=modify_workout_log,
+        description=(
+            "이미 존재하는 PT 로그에서 운동 기록을 수정하는 기능이다. "
+            "사용자의 메시지를 기반으로 다음 JSON 형식으로 정보를 추출해서 하나의 json 형식으로 호출해야 한다:\n\n"
+            "{\n"
+            '    "ptLogId": 101,              // 필수, 현재 PT 로그 ID (숫자)\n'
+            '    "exerciseLogId": 10,         // 필수, 수정하려는 운동 로그 ID (숫자)\n'
+            '    "sequence": 1,               // 선택, 운동 순서 (1 이상 정수)\n'
+            '    "sets": 3,                   // 선택, 세트 수 (1 이상 정수)\n'
+            '    "reps": 10,                  // 선택, 반복 횟수 (1 이상 정수)\n'
+            '    "weight": 20,                // 선택, 무게 (0 이상 숫자, kg 단위)\n'
+            '    "restTime": 60,              // 선택, 세트 간 휴식 시간 (초 단위)\n'
+            '    "feedback": "좋은 자세로 수행"  // 선택, 해당 운동에 대한 피드백\n'
+            "}\n\n"
+            "- 'ptLogId'는 현재 PT 세션의 로그 ID이며, 반드시 포함되어야 한다.\n"
+            "- 'exerciseLogId'는 수정하려는 운동 기록의 ID로 반드시 포함되어야 한다.\n"
+            "- 'sequence', 'sets', 'reps', 'weight'는 선택사항으로, 제공되지 않으면 기존 값으로 남는다.\n"
+            "- 'restTime'과 'feedback'은 선택사항으로, 제공되지 않으면 기존 값으로 남는다.\n"
+            "- 'sets', 'reps', 'weight' 등의 값은 숫자 형식이어야 한다.\n"
+        )
     )
 ]
 
@@ -86,5 +117,5 @@ def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
     })
 
     print("pt log response: ", response["output"])
-    state.plan = response["output"]
+    state.response = response["output"]
     return state

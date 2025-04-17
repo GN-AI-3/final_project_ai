@@ -226,6 +226,8 @@ class DataAnalyzer:
             
             # 추가 컨텍스트 정보가 있으면 포함
             extra_info = ""
+            
+            # 이전 방식의 데이터 지원
             if msg.get("final_response") and msg.get("role") == "assistant":
                 content = msg.get("final_response")
             
@@ -233,7 +235,11 @@ class DataAnalyzer:
                 content = msg.get("member_input")
             
             if msg.get("selected_agents"):
-                extra_info += f" [선택된 에이전트: {msg.get('selected_agents')}]"
+                agents = msg.get("selected_agents")
+                if isinstance(agents, list):
+                    extra_info += f" [선택된 에이전트: {', '.join(agents)}]"
+                else:
+                    extra_info += f" [선택된 에이전트: {agents}]"
             
             formatted.append(f"[{timestamp}] {role}: {content}{extra_info}")
         
@@ -588,23 +594,31 @@ class DataAnalyzer:
         if target_date is None:
             target_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
         
-        from_date = target_date
+        # 더 넓은 범위의 날짜를 사용 (일주일)
+        from_date = target_date - timedelta(days=7)  # 일주일 전부터
         to_date = target_date.replace(hour=23, minute=59, second=59)
         
-        logger.info(f"{from_date.strftime('%Y-%m-%d')} 데이터 분석 시작")
+        logger.info(f"{from_date.strftime('%Y-%m-%d')} ~ {to_date.strftime('%Y-%m-%d')} 데이터 분석 시작")
         
         # 채팅 메시지 가져오기
         messages = self.get_chat_messages(from_date, to_date)
         if not messages:
-            logger.info(f"{from_date.strftime('%Y-%m-%d')}에 분석할 메시지가 없습니다.")
+            logger.info(f"{from_date.strftime('%Y-%m-%d')} ~ {to_date.strftime('%Y-%m-%d')}에 분석할 메시지가 없습니다.")
             return
         
         # 사용자별로 메시지 그룹화
         grouped_messages = self.group_messages_by_user(messages)
         
+        logger.info(f"총 {len(grouped_messages)}명의 사용자 데이터를 찾았습니다: {', '.join(grouped_messages.keys())}")
+        
         # 각 사용자별 분석 수행
         for email, user_messages in grouped_messages.items():
             logger.info(f"사용자 {email} 분석 시작 - {len(user_messages)}개 메시지")
+            
+            # 메시지가 너무 적으면 스킵
+            if len(user_messages) < 3:
+                logger.info(f"사용자 {email}의 메시지가 3개 미만으로 분석하지 않습니다.")
+                continue
             
             # 토큰 제한으로 인해 최근 30개 메시지만 사용
             if len(user_messages) > 30:
@@ -633,21 +647,27 @@ class DataAnalyzer:
             else:
                 logger.error(f"사용자 {email} 분석 결과 QDrant 저장 실패")
         
-        logger.info(f"{from_date.strftime('%Y-%m-%d')} 데이터 분석 완료")
+        logger.info(f"{from_date.strftime('%Y-%m-%d')} ~ {to_date.strftime('%Y-%m-%d')} 데이터 분석 완료")
     
     def run_scheduled_analysis(self):
         """매일 자정에 전날 데이터 분석을 실행합니다."""
         logger.info("스케줄링된 데이터 분석이 시작되었습니다.")
         
-        yesterday = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
-        asyncio.run(self.analyze_daily_data(yesterday))
+        # 최근 7일간의 데이터 분석
+        end_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        start_date = end_date - timedelta(days=6)  # 7일 범위 (어제 포함)
+        
+        logger.info(f"최근 7일간({start_date.strftime('%Y-%m-%d')} ~ {end_date.strftime('%Y-%m-%d')})의 데이터를 분석합니다.")
+        
+        # 날짜 범위 분석
+        asyncio.run(run_analysis_for_date_range(start_date, end_date))
     
     def start_scheduler(self):
         """스케줄러를 시작합니다."""
         # 매일 자정에 분석 실행
-        schedule.every().day.at("15:20").do(self.run_scheduled_analysis)
+        schedule.every().day.at("02:12").do(self.run_scheduled_analysis)
         
-        logger.info("스케줄러가 시작되었습니다. 매일 15:20에 분석이 실행됩니다.")
+        logger.info("스케줄러가 시작되었습니다. 매일 02:12에 분석이 실행됩니다.")
         
         while True:
             schedule.run_pending()
