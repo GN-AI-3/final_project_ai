@@ -140,7 +140,12 @@ class Supervisor:
                 if category == "general":
                     result = await agent.process(message, context_info=agent_context, chat_history=chat_history)
                 elif category == "schedule":
-                    result = await agent.process(message)
+                    try:
+                        # chat_history 파라미터를 지원하는지 확인
+                        result = await agent.process(message, chat_history=chat_history)
+                    except TypeError:
+                        # 지원하지 않으면 기본 호출
+                        result = await agent.process(message)
                 elif category in ["exercise", "motivation", "food"]:
                     result = await agent.process(message, email=user_id, chat_history=chat_history)
                 else:
