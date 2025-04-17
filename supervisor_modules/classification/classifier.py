@@ -31,7 +31,7 @@ async def classify_message(
     start_time = time.time()
     metadata: Dict[str, Any] = {
         "classification_time": 0,
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4o",
     }
 
     try:

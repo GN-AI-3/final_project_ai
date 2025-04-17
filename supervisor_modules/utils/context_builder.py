@@ -17,6 +17,8 @@ from common_prompts.prompts import AGENT_CONTEXT_BUILDING_PROMPT
 
 logger = logging.getLogger(__name__)
 
+__all__ = ['build_agent_context', 'format_context_for_agent']
+
 @traceable(run_type="chain", name="에이전트 문맥 정보 빌더")
 async def build_agent_context(
     message: str,
@@ -56,7 +58,7 @@ async def build_agent_context(
     logger.debug(f"[{request_id}] [build_agent_context] 전체 프롬프트: {prompt_text}")
 
     try:
-        chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
+        chat_model = ChatOpenAI(model="gpt-4o", temperature=0.2)
         response = chat_model.invoke([
             SystemMessage(content="당신은 문맥 요약 전문가입니다."),
             HumanMessage(content=prompt_text)
@@ -106,10 +108,22 @@ async def build_agent_context(
         logger.info(f"[{request_id}] [build_agent_context] 소요시간: {duration:.2f}s")
 
 
-def format_context_for_agent(context_info: Dict[str, Any], agent_type: str) -> str:
+def format_context_for_agent(context_info: Dict[str, Any], agent_type: str = None) -> str:
     """
-    예: context_info가 {"context_summary": "..."} 구조라면,
-    필요시 agent_type에 따라 커스텀 로직을 넣을 수도 있음.
-    """
+    Format context information for a specific agent type.
     
-    return context_info.get("context_summary", "")
+    Args:
+        context_info: A dictionary containing context information.
+        agent_type: The type of agent to format the context for.
+        
+    Returns:
+        A string containing the formatted context.
+    """
+    if not context_info or not isinstance(context_info, dict):
+        return ""
+        
+    # 기본 context_summary 추출
+    summary = context_info.get("context_summary", "")
+    
+    # 필요시 agent_type에 따른 커스텀 로직 추가
+    return summary
