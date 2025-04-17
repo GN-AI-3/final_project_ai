@@ -2,7 +2,8 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
-from workout_log.workout_log_prompt import WORKOUT_LOG_PROMPT, WORKOUT_LOG_PROMPT2
+from workout_log.workout_log_prompt import WORKOUT_LOG_PROMPT2
+from pt_log.pt_log_prompt import PT_LOG_PROMPT_WITH_HISTORY
 from workout_log.workout_log_tool import add_workout_log, modify_workout_log, is_workout_log_exist
 from workout_log.workout_log_model import workoutLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
@@ -59,10 +60,29 @@ def workout_log(state: workoutLogState, llm: ChatOpenAI) -> workoutLogState:
     message = state.message
     memberId = state.memberId
     date = state.date
+    chat_history = state.chat_history
 
+    print("chat_history: ", state.chat_history)
+
+    if chat_history and len(chat_history) > 0:
+        reconstruct_prompt = ChatPromptTemplate.from_messages([
+            ("system", PT_LOG_PROMPT_WITH_HISTORY),
+            ("user", "{message}"),
+            ("user", "{chat_history}"),
+        ])
+
+        reconstruct_chain = reconstruct_prompt | llm
+        reconstructed_message = reconstruct_chain.invoke({
+            "chat_history": json.dumps(chat_history, ensure_ascii=False),
+            "message": message
+        }).content
+    else:
+        reconstructed_message = message
+
+    print("reconstructed_message: ", reconstructed_message)
     prompt = ChatPromptTemplate.from_messages([
         ("system", WORKOUT_LOG_PROMPT2),
-        ("user", "{message}"),
+        ("user", "{reconstructed_message}"),
         ("user", "{memberId}"),
         ("user", "{date}"),
         MessagesPlaceholder(variable_name="agent_scratchpad")
@@ -78,11 +98,11 @@ def workout_log(state: workoutLogState, llm: ChatOpenAI) -> workoutLogState:
     )
 
     response = agent_executor.invoke({
-        "message": message,
+        "reconstructed_message": reconstructed_message,
         "memberId": memberId,
         "date": date
     })
 
     print("workout log response: ", response["output"])
-    state.result = response["output"]
+    state.response = response["output"]
     return state

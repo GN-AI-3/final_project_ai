@@ -15,7 +15,7 @@ from datetime import datetime
 import uuid
 
 from pt_log.pt_log_workflow import create_pt_log_workflow
-
+from workout_log.workout_log_workflow import create_workout_log_workflow
 # 대화 내역 관리자 임포트
 from chat_history_manager import ChatHistoryManager
 
@@ -91,10 +91,21 @@ class ChatResponse(BaseModel):
 
 class PtLogRequest(BaseModel):
     message: str
-    ptScheduleId: Optional[int] = 0
+    ptScheduleId: int
 
 class PtLogResponse(BaseModel):
     ptScheduleId: int
+    timestamp: str
+    final_response: str
+    execution_time: Optional[float] = None
+
+class WorkoutLogRequest(BaseModel):
+    message: str
+    memberId: int
+    date: str
+
+class WorkoutLogResponse(BaseModel):
+    memberId: int
     timestamp: str
     final_response: str
     execution_time: Optional[float] = None
@@ -216,14 +227,35 @@ async def pt_log(pt_log_request: PtLogRequest):
     try:
         workflow = create_pt_log_workflow()
 
+        chat_history = chat_history_manager.get_recent_messages_by_pt_log_key(ptScheduleId, 6)
+
         start_time = datetime.now()
         result = workflow.invoke({
             "message": message,
-            "ptScheduleId": ptScheduleId
+            "ptScheduleId": ptScheduleId,
+            "chat_history": chat_history
         })
         elapsed = (datetime.now() - start_time).total_seconds()
 
         logger.info(f"[{request_id}] PT 로그 처리 완료 (소요: {elapsed:.2f}s)")
+
+        # 사용자 메시지 저장
+        user_message_saved = chat_history_manager.add_pt_log_entry(
+            ptScheduleId,
+            "user",
+            message
+        )
+        if not user_message_saved:
+            logger.warning(f"[{request_id}] 사용자 메시지 저장 실패: {ptScheduleId}")
+
+        # 에이전트(assistant) 메시지 저장
+        assistant_message_saved = chat_history_manager.add_pt_log_entry(
+            ptScheduleId,
+            "assistant",
+            result.get("response", "")
+        )
+        if not assistant_message_saved:
+            logger.warning(f"[{request_id}] 어시스턴트 메시지 저장 실패: {ptScheduleId}")
 
         return PtLogResponse(
             ptScheduleId=ptScheduleId,
@@ -236,6 +268,67 @@ async def pt_log(pt_log_request: PtLogRequest):
         logger.error(f"[{request_id}] PT 로그 처리 오류: {str(e)}")
         return PtLogResponse(
             ptScheduleId=ptScheduleId,
+            timestamp=datetime.now().isoformat(),
+            final_response=f"처리 중 오류가 발생했습니다: {str(e)}",
+            execution_time=0
+        )
+
+@app.post("/workout_log")
+async def workout_log(workout_log_request: WorkoutLogRequest):
+    request_id = str(uuid.uuid4())
+    message = workout_log_request.message
+    memberId = workout_log_request.memberId
+    date = workout_log_request.date
+
+    logger.info(f"[{request_id}] 운동 기록 요청 - memberId: {memberId}, date: {date}, msg: {message[:50]}...")
+
+    try:
+        workflow = create_workout_log_workflow()
+
+        chat_history = chat_history_manager.get_recent_messages_by_workout_log_key(memberId, date, 6)
+
+        start_time = datetime.now()
+        result = workflow.invoke({
+            "message": message,
+            "memberId": memberId,
+            "date": date,
+            "chat_history": chat_history
+        })
+        elapsed = (datetime.now() - start_time).total_seconds()
+
+        logger.info(f"[{request_id}] 운동 기록 처리 완료 (소요: {elapsed:.2f}s)")
+
+        # 사용자 메시지 저장
+        user_message_saved = chat_history_manager.add_workout_log_entry(
+            memberId,
+            date,
+            "user",
+            message
+        )
+        if not user_message_saved:
+            logger.warning(f"[{request_id}] 사용자 메시지 저장 실패: {memberId}")
+
+        # 에이전트(assistant) 메시지 저장
+        assistant_message_saved = chat_history_manager.add_workout_log_entry(
+            memberId,
+            date,
+            "assistant",
+            result.get("response", "")
+        )
+        if not assistant_message_saved:
+            logger.warning(f"[{request_id}] 어시스턴트 메시지 저장 실패: {memberId}")
+
+        return WorkoutLogResponse(
+            memberId=memberId,
+            timestamp=datetime.now().isoformat(),
+            final_response=result.get("response", ""),
+            execution_time=elapsed
+        )
+    
+    except Exception as e:
+        logger.error(f"[{request_id}] 운동 기록 처리 오류: {str(e)}")
+        return WorkoutLogResponse(
+            memberId=memberId,
             timestamp=datetime.now().isoformat(),
             final_response=f"처리 중 오류가 발생했습니다: {str(e)}",
             execution_time=0
