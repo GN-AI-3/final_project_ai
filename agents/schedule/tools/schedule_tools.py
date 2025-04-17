@@ -12,7 +12,7 @@ from ..utils.schedule_validator import (
     check_existing_schedule
 )
 
-pt_contract_id = 7
+pt_contract_id = 10
 
 @tool
 def get_user_schedule(input: str = "") -> str:
