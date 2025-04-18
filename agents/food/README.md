@@ -1,176 +1,133 @@
-# Food Agent
+# AI 기반 식단 추천 시스템
 
-식사 추천 및 영양 관리 에이전트
+## 프로젝트 구조
 
-## 기능
-
-- 사용자 맞춤형 식단 추천
-- 영양소 분석 및 관리
-- 식사 기록 관리
-- 알레르기 및 선호도 기반 필터링
-
-## 주요 컴포넌트
-
-### 1. BalancedMealAgent
-
-균형 잡힌 식단을 추천하는 에이전트
-
-#### 주요 기능:
-- 사용자 목표에 따른 식단 유형 결정
-- 사용자 정보 및 선호도 기반 맞춤형 식단 추천
-- 영양소 균형 분석
-- 식사 시간대별 추천
-
-#### 사용 방법:
-```python
-from agents.food.subagents.balanced_meal_agent.nodes import BalancedMealAgent
-
-# 에이전트 초기화
-agent = BalancedMealAgent()
-
-# 식단 추천 요청
-result = await agent.process("식단 추천", user_id="1")
+```
+make2/
+├── main.py                 # 메인 실행 파일
+├── new_agent_graph.py      # 에이전트 그래프 정의
+├── llm_config.py          # LLM 설정
+├── node/                   # 노드 모듈
+│   ├── core_agent_node.py  # 핵심 에이전트 노드
+│   ├── answer_merger_node.py # 답변 병합 노드
+│   └── ask_user_node.py    # 사용자 질문 노드
+├── tool/                   # 도구 모듈
+│   └── recommend_diet_tool.py # 식단 추천 도구
+└── util/                   # 유틸리티 모듈
+    ├── sql_utils.py        # SQL 유틸리티
+    └── table_schema.py     # 데이터베이스 스키마
 ```
 
-#### 응답 형식:
-```json
-{
-    "type": "food",
-    "response": "📌 **추천 식단:**\n\n🍳 **아침 식사:**\n...",
-    "data": {
-        "breakfast": {
-            "meal": "오트밀과 과일",
-            "comment": "아침에 필요한 에너지와 영양소를 제공하는 건강한 아침 식사입니다.",
-            "nutrition": {
-                "calories": 350,
-                "protein": 12,
-                "carbs": 45,
-                "fat": 8
-            }
-        },
-        "lunch": {...},
-        "dinner": {...},
-        "total_nutrition": {
-            "calories": 1300,
-            "protein": 67,
-            "carbs": 145,
-            "fat": 35
-        }
-    }
-}
-```
+## 주요 기능
 
-### 2. NutritionAgent
+### 1. 식단 추천 시스템
+- 사용자 맞춤형 식단 계획 생성
+- 영양소 분석 및 추천
+- 식사 시간대별 메뉴 제안
 
-영양소 분석 및 관리를 담당하는 에이전트
+### 2. 데이터베이스 관리
+- PostgreSQL 데이터베이스 연동
+- 회원 정보 관리
+- 식단 기록 저장 및 분석
 
-#### 주요 기능:
-- 영양소 섭취량 분석
-- 영양소 균형 평가
-- 영양소 결핍 진단
-- 영양소 보충 제안
+### 3. AI 에이전트 시스템
+- LangGraph 기반 에이전트 구현
+- 다단계 의사결정 프로세스
+- 사용자 상호작용 처리
 
-### 3. MealHistoryAgent
+## 기술 스택
 
-식사 기록 관리를 담당하는 에이전트
+- Python 3.8+
+- LangGraph
+- PostgreSQL
+- LangChain
+- OpenAI API
 
-#### 주요 기능:
-- 식사 기록 저장
-- 식사 패턴 분석
-- 식사 시간 관리
-- 식사 통계 제공
+## 설치 및 실행
 
-## 데이터베이스 스키마
-
-### users 테이블
-```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    gender TEXT NOT NULL,
-    age INTEGER NOT NULL,
-    height REAL NOT NULL,
-    weight REAL NOT NULL,
-    goal TEXT NOT NULL,
-    activity_level TEXT NOT NULL
-);
-```
-
-### user_preferences 테이블
-```sql
-CREATE TABLE user_preferences (
-    user_id INTEGER PRIMARY KEY,
-    allergies TEXT,
-    dietary_preference TEXT,
-    meal_pattern TEXT,
-    meal_times TEXT,
-    food_preferences TEXT,
-    special_requirements TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-```
-
-### meal_history 테이블
-```sql
-CREATE TABLE meal_history (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    meal_type TEXT NOT NULL,
-    meal_time TIMESTAMP NOT NULL,
-    foods TEXT NOT NULL,
-    calories INTEGER,
-    protein REAL,
-    carbs REAL,
-    fat REAL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-```
-
-## 설치 및 설정
-
-1. 필요한 패키지 설치:
+1. 환경 설정
 ```bash
 pip install -r requirements.txt
 ```
 
-2. 데이터베이스 초기화:
+2. 환경 변수 설정
 ```bash
-python init_db.py
+cp .env.example .env
+# .env 파일에 필요한 환경 변수 설정
 ```
 
-3. 환경 변수 설정:
+3. 데이터베이스 설정
 ```bash
-export OPENAI_API_KEY=your_api_key
+python util/setup_db.py
 ```
 
-## 사용 예시
-
-```python
-from agents.food.agent_main import FoodAgent
-
-# 에이전트 초기화
-agent = FoodAgent()
-
-# 식단 추천 요청
-result = await agent.process("식단 추천", user_id="1")
-print(result["response"])
+4. 실행
+```bash
+python main.py
 ```
 
-## 오류 처리
+## 주요 모듈 설명
 
-- 사용자 정보 누락: 기본 추천 제공
-- 영양소 정보 누락: 기본 영양소 목표 사용
-- 식단 계획 누락: 기본 식단 계획 사용
-- JSON 파싱 오류: 기본 추천 제공
+### 노드 (node/)
+- `core_agent_node.py`: 핵심 에이전트 로직 구현
+- `answer_merger_node.py`: 여러 도구의 결과를 병합
+- `ask_user_node.py`: 사용자 입력 처리
 
-## 기여 방법
+### 도구 (tool/)
+- `recommend_diet_tool.py`: 식단 추천 알고리즘 구현
 
-1. 이슈 생성
-2. 브랜치 생성
-3. 코드 작성
-4. 테스트 실행
-5. PR 생성
+### 유틸리티 (util/)
+- `sql_utils.py`: 데이터베이스 작업 유틸리티
+- `table_schema.py`: 데이터베이스 스키마 정의
+
+## 데이터베이스 스키마
+
+### 주요 테이블
+- members: 회원 정보
+- meals: 식사 기록
+- nutrition_info: 영양 정보
+- meal_plans: 식단 계획
+
+## API 엔드포인트
+
+### 식단 추천
+```
+POST /api/recommend-diet
+{
+    "member_id": int,
+    "days": int (optional)
+}
+```
+
+### 식단 분석
+```
+GET /api/analyze-meals/{member_id}
+```
+
+### 영양 정보 조회
+```
+GET /api/nutrition/{food_name}
+```
+
+## 에러 처리
+
+- 데이터베이스 연결 오류
+- API 요청 실패
+- 사용자 입력 검증
+- 영양 정보 누락
+
+## 보안
+
+- 환경 변수 사용
+- API 키 보호
+- 사용자 데이터 암호화
+
+## 테스트
+
+```bash
+python -m pytest tests/
+```
 
 ## 라이선스
 
-MIT License
+MIT License 
