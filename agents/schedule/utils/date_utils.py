@@ -107,7 +107,10 @@ def _parse_hour(hour_str: Union[str, int]) -> Tuple[Optional[int], Optional[str]
         if is_am is not None:
             if not (1 <= hour <= 12):
                 return None, "12시간 형식에서는 1부터 12 사이로 입력해주세요."
-            hour = 0 if hour == 12 and is_am else (hour if is_am else (hour + 12 if hour != 12 else 12))
+            if is_am:
+                hour = 0 if hour == 12 else hour
+            else:
+                hour = hour if hour == 12 else hour + 12
         else:
             if not (0 <= hour <= 23):
                 return None, "24시간 형식에서는 0부터 23 사이의 숫자를 입력해주세요."
