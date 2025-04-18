@@ -98,7 +98,9 @@ class Supervisor:
             # 1) 문맥 정보 생성
             logger.info(f"[{request_id}] (1) 문맥 정보 생성 시작")
             context_info = await build_agent_context(
-                message=message, chat_history=chat_history
+                message=message, 
+                chat_history=chat_history,
+                request_id=request_id
             )
             logger.info(f"[{request_id}] (1) 문맥 정보 생성 완료: {len(context_info)}")
 
@@ -127,8 +129,8 @@ class Supervisor:
             try:
                 if category == "general":
                     result = await agent.process(
-                        message=payload_message,
-                        context_info=agent_context,
+                        message=message,
+                        context_info=context_info,
                         chat_history=chat_history,
                     )
                 elif category == "schedule":
