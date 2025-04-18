@@ -17,17 +17,30 @@ from common_prompts.prompts import AGENT_CONTEXT_BUILDING_PROMPT
 
 logger = logging.getLogger(__name__)
 
+__all__ = ['build_agent_context', 'format_context_for_agent']
+
 @traceable(run_type="chain", name="에이전트 문맥 정보 빌더")
 async def build_agent_context(
     message: str,
-    chat_history: List[Dict[str, Any]]
+    chat_history: List[Dict[str, Any]],
+    request_id: str = None,
 ) -> str:
     """
-    (1) 대화 내역, 성향, 현재 메시지 기반으로 문맥 요약(context_info)을 생성한다.
-    (2) JSON 형태의 문자열을 반환 (예: '{"context_summary": "..."}')
+    Builds context summary information based on user message and chat history.
+    
+    Args:
+        message: The user's message.
+        chat_history: The chat history in the format [{role: "user", content: "..."}, {role: "assistant", content: "..."}].
+        request_id: The unique identifier for the current request.
+        
+    Returns:
+        A JSON string containing context information.
     """
     start_time = time.time()
-    logger.info("[build_agent_context] 문맥 정보 생성 시작")
+    if not request_id:
+        request_id = str(time.time())
+    
+    logger.info(f"[{request_id}] [build_agent_context] 문맥 정보 생성 시작")
 
     # 최근 대화 6개만 사용
     formatted_history = "\n".join(
@@ -42,10 +55,10 @@ async def build_agent_context(
     )
 
     # 프롬프트 로깅 (debug 레벨로만 기록)
-    logger.debug(f"[build_agent_context] 전체 프롬프트: {prompt_text}")
+    logger.debug(f"[{request_id}] [build_agent_context] 전체 프롬프트: {prompt_text}")
 
     try:
-        chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
+        chat_model = ChatOpenAI(model="gpt-4o", temperature=0.2)
         response = chat_model.invoke([
             SystemMessage(content="당신은 문맥 요약 전문가입니다."),
             HumanMessage(content=prompt_text)
@@ -54,7 +67,7 @@ async def build_agent_context(
         raw = response.content.strip()
         
         # 원본 응답 로깅 (debug 레벨로만 기록)
-        logger.debug(f"[build_agent_context] 전체 응답: {raw}")
+        logger.debug(f"[{request_id}] [build_agent_context] 전체 응답: {raw}")
 
         # ```json 코드블록 제거
         json_text = raw
@@ -64,30 +77,53 @@ async def build_agent_context(
             json_text = raw.split("```")[1].split("```")[0].strip()
 
         # JSON 파싱 테스트
-        context_data = json.loads(json_text)
-        logger.info("[build_agent_context] 문맥 정보 생성 완료")
-        
-        # 최종 파싱된 데이터 로깅 (debug 레벨로만 기록)
-        logger.debug(f"[build_agent_context] 생성된 문맥: {context_data}")
+        try:
+            context_data = json.loads(json_text)
+            logger.info(f"[{request_id}] [build_agent_context] 문맥 정보 생성 완료")
+            
+            # 최종 파싱된 데이터 로깅 (debug 레벨로만 기록)
+            logger.debug(f"[{request_id}] [build_agent_context] 생성된 문맥: {context_data}")
 
-        # 최종 JSON 문자열로 반환
-        return json.dumps(context_data, ensure_ascii=False)
+            # context_summary 출력
+            if "context_summary" in context_data:
+                print(f"\n📝 문맥 요약: {context_data['context_summary'][:200]}...\n")
+
+            # 최종 JSON 문자열로 반환
+            return json.dumps(context_data, ensure_ascii=False)
+        except json.JSONDecodeError:
+            # JSON 파싱 실패 시, 기본 형식으로 래핑
+            logger.warning(f"[{request_id}] [build_agent_context] JSON 파싱 실패, 기본 형식으로 변환")
+            sanitized_text = raw.replace('"', '\'')  # 따옴표 충돌 방지
+            context_data = {"context_summary": sanitized_text}
+            return json.dumps(context_data, ensure_ascii=False)
 
     except Exception as e:
-        logger.error("[build_agent_context] 오류 발생: %s", str(e))
+        logger.error(f"[{request_id}] [build_agent_context] 오류 발생: {str(e)}")
         logger.error(traceback.format_exc())
         
         # 실패 시 기본 구조 반환
         return json.dumps({"context_summary": "문맥 요약 실패"}, ensure_ascii=False)
     finally:
         duration = time.time() - start_time
-        logger.info(f"[build_agent_context] 소요시간: {duration:.2f}s")
+        logger.info(f"[{request_id}] [build_agent_context] 소요시간: {duration:.2f}s")
 
 
-def format_context_for_agent(context_info: Dict[str, Any], agent_type: str) -> str:
+def format_context_for_agent(context_info: Dict[str, Any], agent_type: str = None) -> str:
     """
-    예: context_info가 {"context_summary": "..."} 구조라면,
-    필요시 agent_type에 따라 커스텀 로직을 넣을 수도 있음.
-    """
+    Format context information for a specific agent type.
     
-    return context_info.get("context_summary", "")
+    Args:
+        context_info: A dictionary containing context information.
+        agent_type: The type of agent to format the context for.
+        
+    Returns:
+        A string containing the formatted context.
+    """
+    if not context_info or not isinstance(context_info, dict):
+        return ""
+        
+    # 기본 context_summary 추출
+    summary = context_info.get("context_summary", "")
+    
+    # 필요시 agent_type에 따른 커스텀 로직 추가
+    return summary

@@ -31,10 +31,14 @@ async def classify_message(
     start_time = time.time()
     metadata: Dict[str, Any] = {
         "classification_time": 0,
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4o",
     }
 
     try:
+        # context_info 전처리 (문자열 아니면 변환)
+        if not isinstance(context_info, str):
+            context_info = str(context_info)
+
         chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0)
 
         # 라우팅 프롬프트 생성

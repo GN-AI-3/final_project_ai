@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 import json
+import jwt
 
 from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
@@ -128,16 +129,38 @@ class ScheduleChatbot:
             })
 
 
-def call_chatbot(messages: List[Dict[str, Any]], session_id: str = "default") -> str:
+def get_member_id_from_token(token: str) -> int:
+    """JWT 토큰에서 member_id를 추출합니다.
+    
+    Args:
+        token (str): JWT 토큰
+        
+    Returns:
+        int: member_id, 추출 실패 시 0
+    """
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        return decoded.get("id", 0)
+    except Exception:
+        return 0
+
+def call_chatbot(messages: List[Dict[str, Any]], token: str = None, session_id: str = "default") -> str:
     """챗봇을 호출하여 응답을 생성합니다.
     
     Args:
         messages: 메시지 리스트
+        token: JWT 토큰 (기본값: None)
         session_id: 세션 ID (기본값: "default")
         
     Returns:
         str: 생성된 응답
     """
+    # 토큰이 제공된 경우 member_id를 session_id로 사용
+    if token:
+        member_id = get_member_id_from_token(token)
+        if member_id != 0:
+            session_id = str(member_id)
+            
     chatbot = ScheduleChatbot()
     last_message = messages[-1]
     if isinstance(last_message, dict):

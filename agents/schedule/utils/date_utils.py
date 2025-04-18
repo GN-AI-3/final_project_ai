@@ -194,6 +194,39 @@ def validate_date_format(
             except ValueError:
                 return None, "죄송해요. 날짜 형식이 올바르지 않아요. 'X월 Y일' 형식으로 입력해주세요."
 
+        # YYYY년 MM월 DD일 형식인 경우
+        if isinstance(day, str) and '년' in day and '월' in day and '일' in day:
+            try:
+                year_part = day.split('년')[0]
+                month_part = day.split('년')[1].split('월')[0]
+                day_part = day.split('월')[1].split('일')[0]
+                
+                year = int(year_part)
+                input_month = int(month_part)
+                input_day = int(day_part)
+                
+                if input_month < 1 or input_month > 12:
+                    return None, "죄송해요. 월은 1-12 사이의 숫자로 입력해주세요."
+                    
+                if input_month in [4, 6, 9, 11]:
+                    max_day = 30
+                elif input_month == 2:
+                    max_day = 29 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 28
+                else:
+                    max_day = 31
+                    
+                if input_day > max_day:
+                    if input_month == 2:
+                        year_type = "윤년" if max_day == 29 else "평년"
+                        return None, f"죄송해요. {year}년 2월은 {year_type}으로 {max_day}일까지 있어요. 1-{max_day} 사이의 날짜를 다시 입력해주세요."
+                    return None, f"죄송해요. {input_month}월은 {max_day}일까지 있어요. 1-{max_day} 사이의 날짜를 다시 입력해주세요."
+
+                start_dt = datetime(year, input_month, input_day, input_hour, 0)
+                end_dt = start_dt + timedelta(hours=1)
+                return start_dt, end_dt
+            except ValueError:
+                return None, "죄송해요. 날짜 형식이 올바르지 않아요. 'YYYY년 MM월 DD일' 형식으로 입력해주세요."
+
         rel_year, rel_month, rel_day = _parse_relative_date(str(day))
         if rel_year is not None:
             start_dt = datetime(rel_year, rel_month, rel_day, input_hour, 0)

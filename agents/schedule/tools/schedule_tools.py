@@ -1,50 +1,247 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict
 import json
+import httpx
+import os
+import jwt
+import re
 
 from langchain.agents import tool
 
-from ..core.database import execute_query
 from ..utils.date_utils import validate_date_format
-from ..utils.schedule_validator import (
-    check_same_day,
-    check_future_date,
-    check_existing_schedule
+from ..core.database import execute_query
+
+# API 기본 URL 설정
+API_BASE_URL = "http://localhost:8081/api"
+# 인증 토큰 설정
+AUTH_TOKEN = os.getenv(
+    "AUTH_TOKEN",
+    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoi7J6l6re87JqwIiwiaWQiOjQsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJ1c2VyMUB0ZXN0LmNvbSIsImdvYWxzIjpbIldFSUdIVF9MT1NTIl0sImlhdCI6MTc0NDc4NjAxNiwiZXhwIjoxNzQ1MTQ2MDE2fQ.K0hNJEV0TLj0qYdFGpP0KeowQHmZ7kWwzxN_c8gMekjVbb1KnvMiJ0YHhsHLYG49"
 )
 
-pt_contract_id = 10
+def get_pt_contract_id_from_token(token: str) -> int:
+    """JWT 토큰에서 member_id를 추출하고 해당 member의 pt_contract_id를 찾습니다.
+    
+    Args:
+        token (str): JWT 토큰
+        
+    Returns:
+        int: pt_contract_id, 추출 실패 시 0
+    """
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        member_id = decoded.get("id", 0)
+        
+        if member_id == 0:
+            return 0
+            
+        # member_id로 pt_contract_id 찾기
+        contract_query = f"""
+            SELECT id
+            FROM pt_contract
+            WHERE member_id = {member_id}
+            LIMIT 1;
+        """
+        
+        contract_result = execute_query(contract_query)
+        
+        if not contract_result or contract_result == "데이터가 없습니다.":
+            return 0
+            
+        # 문자열에서 숫자만 추출
+        if isinstance(contract_result, str):
+            # 괄호 안의 숫자만 추출
+            numbers = re.findall(r'\d+', contract_result)
+            if numbers:
+                return int(numbers[0])
+        
+        return 0
+        
+    except Exception:
+        return 0
+
+def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Dict:
+    """API 요청을 보내는 헬퍼 함수.
+    
+    Args:
+        endpoint (str): API 엔드포인트
+        method (str, optional): HTTP 메소드. 기본값은 "GET"
+        data (Optional[Dict], optional): 요청 데이터. 기본값은 None
+        
+    Returns:
+        Dict: API 응답 데이터
+    """
+    url = f"{API_BASE_URL}/{endpoint}"
+    headers = {
+        "Authorization": f"Bearer {AUTH_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        if method == "GET":
+            response = httpx.get(url, headers=headers)
+        elif method == "POST":
+            response = httpx.post(url, json=data, headers=headers)
+        elif method == "PUT":
+            response = httpx.put(url, json=data, headers=headers)
+        elif method == "DELETE":
+            response = httpx.delete(url, headers=headers)
+        elif method == "PATCH":
+            response = httpx.patch(url, json=data, headers=headers)
+        else:
+            raise ValueError(f"지원하지 않는 HTTP 메서드입니다: {method}")
+        
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as e:
+        return {
+            "success": False,
+            "error": f"API 요청 중 오류가 발생했습니다: {str(e)}"
+        }
+
+def check_future_date(start_dt: datetime) -> str:
+    """미래 날짜 여부를 확인합니다.
+    
+    Args:
+        start_dt (datetime): 확인할 날짜
+        
+    Returns:
+        str: 과거 날짜인 경우 에러 메시지, 미래 날짜인 경우 None
+    """
+    try:
+        now = datetime.now()
+        
+        # 날짜만 비교 (시간 제외)
+        if (start_dt.year < now.year or
+            (start_dt.year == now.year and start_dt.month < now.month) or
+            (start_dt.year == now.year and start_dt.month == now.month and start_dt.day < now.day)):
+            return (
+                "죄송해요. 과거 날짜로는 예약할 수 없어요. "
+                "오늘 이후의 날짜를 선택해주세요."
+            )
+        return None
+    except Exception as e:
+        return f"미래 날짜 확인 중 오류가 발생했습니다: {str(e)}"
+
+def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
+    """해당 시간대에 이미 예약이 있는지 확인합니다.
+    
+    Args:
+        start_dt (datetime): 예약 시작 시간
+        end_dt (datetime): 예약 종료 시간
+        
+    Returns:
+        str: 중복 예약이 있는 경우 에러 메시지, 없는 경우 None
+    """
+    try:
+        # pt_contract_id로 trainer_id 찾기
+        pt_contract_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        
+        trainer_query = f"""
+            SELECT trainer_id
+            FROM pt_contract
+            WHERE id = {pt_contract_id}
+            LIMIT 1;
+        """
+        
+        trainer_result = execute_query(trainer_query)
+        
+        if not trainer_result or trainer_result == "데이터가 없습니다.":
+            return "트레이너 정보를 찾을 수 없습니다."
+            
+        # 문자열에서 숫자만 추출
+        if isinstance(trainer_result, str):
+            # 괄호 안의 숫자만 추출
+            numbers = re.findall(r'\d+', trainer_result)
+            if numbers:
+                trainer_id = int(numbers[0])
+            else:
+                return "트레이너 정보를 찾을 수 없습니다."
+        else:
+            return "트레이너 정보를 찾을 수 없습니다."
+        
+        start_time_str = start_dt.strftime('%Y-%m-%d %H:%M:%S')
+        end_time_str = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        check_query = f"""
+            SELECT start_time, end_time
+            FROM pt_schedule
+            WHERE pt_contract_id IN (
+                SELECT id 
+                FROM pt_contract 
+                WHERE trainer_id = {trainer_id}
+            )
+            AND status = 'scheduled'
+            AND NOT (
+                end_time <= '{start_time_str}' OR
+                start_time >= '{end_time_str}'
+            )
+            LIMIT 1;
+        """
+        
+        result = execute_query(check_query)
+        
+        # 결과가 없거나 "데이터가 없습니다"인 경우
+        if not result or result == "데이터가 없습니다.":
+            return None
+        
+        # 결과가 문자열인 경우
+        if isinstance(result, str):
+            # 괄호 안의 날짜/시간 정보 추출
+            datetime_pattern = r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+            datetimes = re.findall(datetime_pattern, result)
+            if len(datetimes) >= 2:
+                existing_start = datetime.strptime(datetimes[0], '%Y-%m-%d %H:%M:%S')
+                existing_end = datetime.strptime(datetimes[1], '%Y-%m-%d %H:%M:%S')
+                
+                start_str = existing_start.strftime('%Y-%m-%d %H:%M')
+                end_str = existing_end.strftime('%H:%M')
+                return (
+                    f"죄송해요. 해당 시간대({start_str} ~ {end_str})에 "
+                    "이미 예약이 있어요. 다른 시간으로 예약해보시는 건 어떨까요?"
+                )
+            return (
+                "죄송해요. 해당 시간대에 이미 예약이 있어요. "
+                "다른 시간으로 예약해보시는 건 어떨까요?"
+            )
+        
+        return None
+        
+    except Exception as e:
+        return f"예약 중복 확인 중 오류가 발생했습니다: {str(e)}"
 
 @tool
 def get_user_schedule(input: str = "") -> str:
     """사용자의 스케줄을 조회합니다.
     
     Args:
-        input: 사용자 입력 (사용되지 않음)
+        input (str, optional): 입력 문자열. 기본값은 ""
         
     Returns:
-        str: 스케줄 목록 또는 에러 메시지
+        str: JSON 형식의 스케줄 정보
     """
     try:
-        query = f"""
-        SELECT start_time, reservation_id
-        FROM pt_schedule
-        WHERE pt_contract_id = {pt_contract_id}
-        AND start_time > CURRENT_TIMESTAMP
-        AND status = 'SCHEDULED'
-        ORDER BY start_time
-        """
+        schedules = make_api_request("pt_schedules")
+        formatted_schedules = []
         
-        results = execute_query(query)
-        
-        if isinstance(results, str):
-            return json.dumps({
-                "success": True,
-                "results": results
-            }, ensure_ascii=False)
+        for schedule in schedules:
+            if schedule.get("status") == "SCHEDULED":
+                try:
+                    start_time = datetime.fromtimestamp(schedule.get("startTime"))
+                    end_time = datetime.fromtimestamp(schedule.get("endTime"))
+                    
+                    formatted_schedule = {
+                        "reservationId": schedule.get("reservationId"),
+                        "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
+                        "endTime": end_time.strftime("%H:%M")
+                    }
+                    formatted_schedules.append(formatted_schedule)
+                except (TypeError, ValueError):
+                    continue
         
         return json.dumps({
-            "success": False,
-            "error": "예약 일정을 찾을 수 없습니다."
+            "success": True,
+            "schedules": formatted_schedules
         }, ensure_ascii=False)
         
     except Exception as e:
@@ -59,17 +256,15 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
     """스케줄을 추가합니다.
     
     Args:
-        day: 예약할 날짜 (문자열로 입력)
-        hour: 예약할 시간 (문자열로 입력)
-        month: 예약할 월 (선택적, 문자열로 입력)
+        day (str): 예약 날짜
+        hour (str): 예약 시간
+        month (Optional[str], optional): 예약 월. 기본값은 None
         
     Returns:
-        str: 예약 결과 또는 에러 메시지
+        str: JSON 형식의 예약 결과
     """
     try:
-        # month가 None이 아닌 경우 문자열로 변환
         month_str = str(month) if month is not None else None
-        
         start_dt, end_dt = validate_date_format(day, hour, month_str)
         
         if start_dt is None:
@@ -78,15 +273,6 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
                 "error": end_dt
             }, ensure_ascii=False)
 
-        # 1. 당일 예약 방지
-        error = check_same_day(start_dt)
-        if error:
-            return json.dumps({
-                "success": False,
-                "error": error
-            }, ensure_ascii=False)
-
-        # 2. 과거 날짜 예약 방지
         error = check_future_date(start_dt)
         if error:
             return json.dumps({
@@ -94,7 +280,6 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
                 "error": error
             }, ensure_ascii=False)
 
-        # 3. 예약 중복 방지
         error = check_existing_schedule(start_dt, end_dt)
         if error:
             return json.dumps({
@@ -102,35 +287,62 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
                 "error": error
             }, ensure_ascii=False)
 
-        # 4. 예약 추가
-        query = f"""
-        INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-        VALUES ('{start_dt}', '{end_dt}', {pt_contract_id}, 'SCHEDULED')
-        RETURNING reservation_id;
-        """
+        # 토큰에서 ptContractId 추출
+        pt_contract_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        if pt_contract_id == 0:
+            return json.dumps({
+                "success": False,
+                "error": "유효하지 않은 토큰입니다."
+            }, ensure_ascii=False)
+
+        schedule_data = {
+            "ptContractId": pt_contract_id,
+            "startTime": int(start_dt.timestamp()),
+            "endTime": int(end_dt.timestamp())
+        }
+
+        response = make_api_request("pt_schedules", "POST", schedule_data)
         
-        result = execute_query(query)
-        
-        # 결과가 문자열인 경우 처리
-        if isinstance(result, str):
-            if "데이터가 없습니다" in result:
+        if not isinstance(response, dict):
+            return json.dumps({
+                "success": False,
+                "error": "예약 추가에 실패했습니다."
+            }, ensure_ascii=False)
+            
+        # API 응답에 success 필드가 없으면 성공으로 간주
+        if response.get("success") is False:
+            return json.dumps({
+                "success": False,
+                "error": response.get("error", "예약 추가에 실패했습니다.")
+            }, ensure_ascii=False)
+            
+        # 응답에 reservationId가 있으면 성공으로 간주
+        if "reservationId" in response:
+            try:
+                # Unix timestamp를 datetime으로 변환
+                start_time = datetime.fromtimestamp(response.get("startTime"))
+                end_time = datetime.fromtimestamp(response.get("endTime"))
+                
+                formatted_schedule = {
+                    "reservationId": response.get("reservationId"),
+                    "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
+                    "endTime": end_time.strftime("%H:%M")
+                }
+                
+                return json.dumps({
+                    "success": True,
+                    "schedule": formatted_schedule
+                }, ensure_ascii=False)
+            except (TypeError, ValueError) as e:
                 return json.dumps({
                     "success": False,
-                    "error": "예약 생성에 실패했습니다."
+                    "error": f"예약 데이터 처리 중 오류가 발생했습니다: {str(e)}"
                 }, ensure_ascii=False)
-            else:
-                # 성공적으로 추가된 경우
-                formatted_start = start_dt.strftime("%Y년 %m월 %d일 %H시")
-                formatted_end = end_dt.strftime("%Y년 %m월 %d일 %H시")
-                
-                response = {
-                    "success": True,
-                    "reservation": {
-                        "start_time": formatted_start,
-                        "end_time": formatted_end
-                    }
-                }
-                return json.dumps(response, ensure_ascii=False)
+        
+        return json.dumps({
+            "success": False,
+            "error": "예약 추가에 실패했습니다."
+        }, ensure_ascii=False)
             
     except Exception as e:
         return json.dumps({
@@ -138,256 +350,276 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
             "error": f"예약 처리 중 오류가 발생했어요: {str(e)}"
         }, ensure_ascii=False)
 
-
 @tool
 def modify_schedule(
-    reservation_id: str,
+    day: str,
+    hour: str,
     action: str,
-    new_day: Optional[int] = None,
-    new_hour: Optional[int] = None,
-    new_month: Optional[int] = None,
+    new_day: Optional[str] = None,
+    new_hour: Optional[str] = None,
+    new_month: Optional[str] = None,
     reason: Optional[str] = None
 ) -> str:
     """예약을 취소하거나 변경합니다.
     
     Args:
-        reservation_id: 예약 번호
-        action: 수행할 작업 ('cancel' 또는 'change')
-        new_day: 새로운 예약 일자 (action이 'change'일 때만 필요)
-        new_hour: 새로운 예약 시간 (action이 'change'일 때만 필요)
-        new_month: 새로운 예약 월 (선택적)
-        reason: 취소 또는 변경 사유
+        day (str): 현재 예약 날짜
+        hour (str): 현재 예약 시간
+        action (str): 수행할 작업 ('cancel' 또는 'change')
+        new_day (Optional[str], optional): 새 예약 날짜. 기본값은 None
+        new_hour (Optional[str], optional): 새 예약 시간. 기본값은 None
+        new_month (Optional[str], optional): 새 예약 월. 기본값은 None
+        reason (Optional[str], optional): 취소/변경 사유. 기본값은 None
         
     Returns:
-        str: 작업 결과 메시지
+        str: JSON 형식의 예약 수정 결과
     """
     try:
-        # 예약 번호 확인
-        check_query = f"""
-        SELECT start_time, end_time, status
-        FROM pt_schedule
-        WHERE pt_contract_id = {pt_contract_id}
-        AND reservation_id = '{reservation_id}'
-        """
+        print(f"[DEBUG] 함수 시작 - 입력 파라미터:")
+        print(f"  - day: {day}")
+        print(f"  - hour: {hour}")
+        print(f"  - action: {action}")
+        print(f"  - new_day: {new_day}")
+        print(f"  - new_hour: {new_hour}")
+        print(f"  - new_month: {new_month}")
+        print(f"  - reason: {reason}")
         
-        result = execute_query(check_query)
+        # 전체 일정 조회
+        print("[DEBUG] 전체 일정 조회 시작")
+        all_schedules_response = make_api_request("pt_schedules")
+        print(f"[DEBUG] 전체 일정 조회 결과: {all_schedules_response}")
         
-        if not result or result == "데이터가 없습니다.":
+        # API 응답이 리스트인 경우 직접 사용
+        if isinstance(all_schedules_response, list):
+            schedules = all_schedules_response
+        else:
+            schedules = all_schedules_response.get("data", [])
+        print(f"[DEBUG] 파싱된 schedules: {schedules}")
+        
+        if not isinstance(schedules, list):
+            print("[DEBUG] schedules가 list가 아님")
             return json.dumps({
                 "success": False,
-                "error": f"예약 번호 {reservation_id}에 해당하는 예약을 찾을 수 없습니다."
+                "error": "일정 데이터 형식이 올바르지 않습니다."
             }, ensure_ascii=False)
         
-        # 예약 상태 확인
-        reservation_status = None
-        if result and result != "데이터가 없습니다.":
+        # SCHEDULED 상태의 일정만 필터링
+        print("[DEBUG] SCHEDULED 상태의 일정 필터링 시작")
+        scheduled_schedules = []
+        for s in schedules:
+            if isinstance(s, dict) and s.get("status") == "SCHEDULED":
+                scheduled_schedules.append(s)
+        print(f"[DEBUG] 필터링된 scheduled_schedules: {scheduled_schedules}")
+        
+        # 입력된 날짜와 시간으로 일정 찾기
+        print("[DEBUG] 대상 일정 찾기 시작")
+        target_schedule = None
+        try:
+            # 날짜와 시간을 파싱 (한글 형식과 YYYY-MM-DD 형식 모두 지원)
             try:
-                # 결과가 튜플 리스트인 경우 처리
-                if isinstance(result, list) and len(result) > 0 and isinstance(result[0], tuple) and len(result[0]) > 2:
-                    reservation_status = result[0][2]
-                # 결과가 문자열인 경우 처리
-                elif isinstance(result, str):
-                    # 문자열에서 상태 정보 추출 시도
-                    if "status" in result.lower():
-                        import re
-                        status_match = re.search(r"status\s*=\s*['\"]([^'\"]+)['\"]", result, re.IGNORECASE)
-                        if status_match:
-                            reservation_status = status_match.group(1)
-            except Exception:
-                pass
-        
-        # 이미 취소된 예약인 경우
-        if reservation_status == 'CANCELLED':
+                # 먼저 YYYY-MM-DD 형식 시도
+                print(f"[DEBUG] YYYY-MM-DD 형식으로 날짜 파싱 시도: {day}")
+                target_date = datetime.strptime(day, "%Y-%m-%d")
+            except ValueError:
+                # YYYY-MM-DD 형식 실패 시 한글 형식 시도
+                print(f"[DEBUG] 한글 형식으로 날짜 파싱 시도: {day}")
+                target_date = datetime.strptime(day, "%Y년 %m월 %d일")
+            
+            print(f"[DEBUG] 시간 파싱 시도: {hour}")
+            target_time = datetime.strptime(hour, "%H:%M").time()
+            target_start_dt = datetime.combine(target_date, target_time)
+            print(f"[DEBUG] 최종 target_start_dt: {target_start_dt}")
+        except ValueError as e:
+            print(f"[DEBUG] 날짜/시간 파싱 오류 발생: {str(e)}")
             return json.dumps({
                 "success": False,
-                "error": f"예약 번호 {reservation_id}는 이미 취소되었습니다."
+                "error": "유효하지 않은 날짜 또는 시간입니다."
             }, ensure_ascii=False)
         
-        # 사유가 없는 경우 사유를 요청
-        if reason is None or reason.strip() == "":
+        for schedule in scheduled_schedules:
+            try:
+                schedule_start_time = datetime.fromtimestamp(schedule.get("startTime"))
+                print(f"[DEBUG] schedule_start_time: {schedule_start_time}")
+                if schedule_start_time == target_start_dt:
+                    target_schedule = schedule
+                    print(f"[DEBUG] target_schedule 찾음: {target_schedule}")
+                    break
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] schedule_start_time 변환 오류: {str(e)}")
+                continue
+                
+        if not target_schedule:
+            print("[DEBUG] target_schedule을 찾을 수 없음")
+            return json.dumps({
+                "success": False,
+                "error": f"{target_start_dt.strftime('%Y년 %m월 %d일 %H:%M')}에 "
+                         "해당하는 예약을 찾을 수 없습니다."
+            }, ensure_ascii=False)
+        
+        if not reason or reason.strip() == "":
+            print("[DEBUG] reason이 없음")
             if action == "cancel":
                 return json.dumps({
                     "success": False,
                     "error": "예약을 취소하려면 취소 사유를 알려주세요."
                 }, ensure_ascii=False)
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": "예약을 변경하려면 변경 사유를 알려주세요."
-                }, ensure_ascii=False)
+            return json.dumps({
+                "success": False,
+                "error": "예약을 변경하려면 변경 사유를 알려주세요."
+            }, ensure_ascii=False)
         
-        # 예약 취소 처리
         if action == "cancel":
-            cancel_query = f"""
-            UPDATE pt_schedule
-            SET status = 'CANCELLED',
-                reason = '{reason}'
-            WHERE pt_contract_id = {pt_contract_id}
-            AND reservation_id = '{reservation_id}'
-            AND status = 'SCHEDULED'
-            RETURNING start_time;
-            """
+            print("[DEBUG] 취소 작업 시작")
+            cancel_data = {
+                "reason": reason
+            }
+            print(f"[DEBUG] cancel_data: {cancel_data}")
             
-            cancel_result = execute_query(cancel_query)
+            cancel_response = make_api_request(
+                f"pt_schedules/{target_schedule.get('id')}/cancel",
+                "PATCH",
+                cancel_data
+            )
+            print(f"[DEBUG] cancel response: {cancel_response}")
             
-            if cancel_result and cancel_result != "데이터가 없습니다.":
-                try:
-                    # 결과가 튜플 리스트인 경우 처리
-                    if isinstance(cancel_result, list) and len(cancel_result) > 0 and isinstance(cancel_result[0], tuple) and len(cancel_result[0]) > 0:
-                        start_time = cancel_result[0][0]
-                    else:
-                        start_time = cancel_result
-                        
-                    if isinstance(start_time, datetime):
-                        formatted_date = start_time.strftime("%Y년 %m월 %d일 %H시")
-                    else:
-                        formatted_date = str(start_time)
-                        
-                    response = {
-                        "success": True,
-                        "action": "cancel",
-                        "reservation": {
-                            "reservation_id": reservation_id,
-                            "start_time": formatted_date,
-                            "reason": reason
-                        }
-                    }
-
-                    return json.dumps(response, ensure_ascii=False)
-                except Exception:
-                    response = {
-                        "success": True,
-                        "action": "cancel",
-                        "reservation": {
-                            "reservation_id": reservation_id,
-                            "reason": reason
-                        }
-                    }
-
-                    return json.dumps(response, ensure_ascii=False)
-            else:
+            if not isinstance(cancel_response, dict):
+                print("[DEBUG] cancel response가 dict가 아님")
                 return json.dumps({
                     "success": False,
                     "error": "예약 취소에 실패했습니다."
                 }, ensure_ascii=False)
+                
+            if cancel_response.get("success") is False:
+                print(f"[DEBUG] cancel API error: {cancel_response.get('error')}")
+                return json.dumps({
+                    "success": False,
+                    "error": cancel_response.get("error", "예약 취소에 실패했습니다.")
+                }, ensure_ascii=False)
+                
+            if "reservationId" in cancel_response:
+                try:
+                    start_time = datetime.fromtimestamp(cancel_response.get("startTime"))
+                    print(f"[DEBUG] cancel success - start_time: {start_time}")
+                    
+                    return json.dumps({
+                        "success": True,
+                        "schedule": {
+                            "reservationId": cancel_response.get("reservationId"),
+                            "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
+                            "reason": reason
+                        }
+                    }, ensure_ascii=False)
+                except (TypeError, ValueError) as e:
+                    print(f"[DEBUG] cancel timestamp 변환 오류: {str(e)}")
+                    return json.dumps({
+                        "success": False,
+                        "error": f"예약 데이터 처리 중 오류가 발생했습니다: {str(e)}"
+                    }, ensure_ascii=False)
         
-        # 예약 변경 처리
         elif action == "change":
-            # 날짜 검증
-            start_dt, end_dt = validate_date_format(new_day, new_hour, new_month)
-            
-            if not start_dt or not end_dt:
+            print("[DEBUG] 변경 작업 시작")
+            try:
+                # 새로운 날짜와 시간을 파싱 (한글 형식과 YYYY-MM-DD 형식 모두 지원)
+                try:
+                    # 먼저 YYYY-MM-DD 형식 시도
+                    new_date = datetime.strptime(new_day, "%Y-%m-%d")
+                except ValueError:
+                    # YYYY-MM-DD 형식 실패 시 한글 형식 시도
+                    new_date = datetime.strptime(new_day, "%Y년 %m월 %d일")
+                
+                # 시간 파싱 (24시간 형식 지원)
+                try:
+                    new_time = datetime.strptime(new_hour, "%H:%M").time()
+                except ValueError:
+                    return json.dumps({
+                        "success": False,
+                        "error": "유효하지 않은 시간 형식입니다."
+                    }, ensure_ascii=False)
+                
+                start_dt = datetime.combine(new_date, new_time)
+                end_dt = start_dt.replace(hour=start_dt.hour + 1)  # 1시간 후
+                print(f"[DEBUG] new start_dt: {start_dt}, end_dt: {end_dt}")
+            except ValueError as e:
+                print(f"[DEBUG] 새로운 날짜/시간 파싱 오류: {str(e)}")
                 return json.dumps({
                     "success": False,
                     "error": "유효하지 않은 날짜 또는 시간입니다."
                 }, ensure_ascii=False)
             
-            # 당일 예약 체크
-            error = check_same_day(start_dt)
-            if error:
-                return json.dumps({
-                    "success": False,
-                    "error": error
-                }, ensure_ascii=False)
-            
-            # 과거 날짜 체크
             error = check_future_date(start_dt)
             if error:
+                print(f"[DEBUG] future date check error: {error}")
                 return json.dumps({
                     "success": False,
                     "error": error
                 }, ensure_ascii=False)
             
-            # 중복 예약 체크
             error = check_existing_schedule(start_dt, end_dt)
             if error:
+                print(f"[DEBUG] existing schedule check error: {error}")
                 return json.dumps({
                     "success": False,
                     "error": error
                 }, ensure_ascii=False)
             
-            # 예약 변경
-            update_query = f"""
-            UPDATE pt_schedule
-            SET status = 'CHANGED',
-                reason = '{reason}'
-            WHERE pt_contract_id = {pt_contract_id}
-            AND reservation_id = '{reservation_id}'
-            AND status = 'SCHEDULED'
-            RETURNING start_time;
-            """
+            change_data = {
+                "startTime": int(start_dt.timestamp()),
+                "endTime": int(end_dt.timestamp()),
+                "reason": reason
+            }
+            print(f"[DEBUG] change_data: {change_data}")
             
-            update_result = execute_query(update_query)
+            change_response = make_api_request(
+                f"pt_schedules/{target_schedule.get('id')}/change",
+                "PATCH",
+                change_data
+            )
+            print(f"[DEBUG] change response: {change_response}")
             
-            if update_result and update_result != "데이터가 없습니다.":
-                # 새 예약 추가
-                insert_query = f"""
-                INSERT INTO pt_schedule (start_time, end_time, pt_contract_id, status)
-                VALUES ('{start_dt}', '{end_dt}', 7, 'SCHEDULED')
-                RETURNING reservation_id;
-                """
-                
-                new_result = execute_query(insert_query)
-                
-                if new_result and new_result != "데이터가 없습니다.":
-                    try:
-                        # 결과가 튜플 리스트인 경우 처리
-                        if isinstance(new_result, list) and len(new_result) > 0 and isinstance(new_result[0], tuple) and len(new_result[0]) > 0:
-                            new_reservation_id = new_result[0][0]
-                        else:
-                            new_reservation_id = new_result
-                            
-                        # 결과 포맷팅
-                        if isinstance(update_result, list) and len(update_result) > 0 and isinstance(update_result[0], tuple) and len(update_result[0]) > 0:
-                            old_date = update_result[0][0]
-                        else:
-                            old_date = update_result
-                            
-                        if isinstance(old_date, datetime):
-                            old_date_str = old_date.strftime("%Y년 %m월 %d일 %H시")
-                        else:
-                            old_date_str = str(old_date)
-                            
-                        new_date_str = start_dt.strftime("%Y년 %m월 %d일 %H시")
-                        
-                        response = {
-                            "success": True,
-                            "action": "change",
-                            "old_schedule": {
-                                "reservation_id": reservation_id,
-                                "start_time": old_date_str
-                            },
-                            "new_schedule": {
-                                "reservation_id": new_reservation_id,
-                                "start_time": new_date_str,
-                                "reason": reason
-                            }
-                        }
-
-                        return json.dumps(response, ensure_ascii=False)
-                    except Exception as e:
-
-                        return json.dumps({
-                            "success": False,
-                            "error": f"예약 변경 중 오류가 발생했습니다: {str(e)}"
-                        }, ensure_ascii=False)
-                else:
-                    return json.dumps({
-                        "success": False,
-                        "error": "새 예약 추가에 실패했습니다."
-                    }, ensure_ascii=False)
-            else:
+            if not isinstance(change_response, dict):
+                print("[DEBUG] change response가 dict가 아님")
                 return json.dumps({
                     "success": False,
-                    "error": "예약 상태 변경에 실패했습니다."
+                    "error": "예약 변경에 실패했습니다."
                 }, ensure_ascii=False)
+                
+            if change_response.get("success") is False:
+                print(f"[DEBUG] change API error: {change_response.get('error')}")
+                return json.dumps({
+                    "success": False,
+                    "error": change_response.get("error", "예약 변경에 실패했습니다.")
+                }, ensure_ascii=False)
+                
+            if "reservationId" in change_response:
+                try:
+                    start_time = datetime.fromtimestamp(change_response.get("startTime"))
+                    end_time = datetime.fromtimestamp(change_response.get("endTime"))
+                    print(f"[DEBUG] change success - start_time: {start_time}, end_time: {end_time}")
+                    
+                    return json.dumps({
+                        "success": True,
+                        "schedule": {
+                            "reservationId": change_response.get("reservationId"),
+                            "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
+                            "endTime": end_time.strftime("%H:%M"),
+                            "reason": reason
+                        }
+                    }, ensure_ascii=False)
+                except (TypeError, ValueError) as e:
+                    print(f"[DEBUG] change timestamp 변환 오류: {str(e)}")
+                    return json.dumps({
+                        "success": False,
+                        "error": f"예약 데이터 처리 중 오류가 발생했습니다: {str(e)}"
+                    }, ensure_ascii=False)
         
+        print("[DEBUG] 잘못된 action")
         return json.dumps({
             "success": False,
             "error": "잘못된 작업입니다. 'cancel' 또는 'change'를 입력해주세요."
         }, ensure_ascii=False)
         
     except Exception as e:
+        print(f"[DEBUG] 예외 발생: {str(e)}")
         return json.dumps({
             "success": False,
             "error": f"예약 처리 중 오류가 발생했어요: {str(e)}"
