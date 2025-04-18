@@ -61,17 +61,17 @@ CATEGORY_ROUTING_PROMPT = """
 당신은 '운동 · 식단 · 일정 · 동기 · 일반' 5개 카테고리로
 사용자 대화를 **1~2개** 선택·분류하는 전문가입니다.
 
-📝 **입력**  
+**입력**  
 - context_info: 최근 대화·성향 등이 담긴 JSON 문자열입니다.
   - 대개 {{"context_summary": "..."}} 형태이니, 먼저 context_summary 값을 뽑아 쓰세요.
 - message: 사용자의 현재 메시지입니다.
 
-🎯 **출력 규칙**  
+**출력 규칙**  
 1. 반드시 JSON 배열 (예: ["general"]) **한 줄**만 반환  
 2. 최대 2개, 최소 1개 카테고리  
 3. 배열 닫는 `]` 뒤에는 어떤 텍스트도 쓰지 마세요.  
 
-🚦 **판정 순서**
+**판정 순서**
 1. `context_summary`와 `message`를 한 문단으로 합쳐 핵심 주제를 파악  
 2. 아래 매핑 규칙에 따라 가장 적합한 카테고리 1~2개 선정  
    - exercise : 운동, 스트레칭, 헬스, 루틴, 근육, 자세, 통증‑완화 스트레칭  
@@ -101,7 +101,7 @@ CATEGORY_ROUTING_PROMPT = """
 
 # 문맥 요약을 위한 컨텍스트 빌딩 프롬프트
 AGENT_CONTEXT_BUILDING_PROMPT = """
-🎯 요약 규칙
+요약 규칙
 0. JSON 한 줄(객체)만 출력, 닫는 `}}` 뒤엔 아무 문자도 금지
 1. chat_history에서 User 역할만 고려, Assistant/System 무시
 2. 1차: message로 핵심 주제·의도 파악
@@ -116,11 +116,11 @@ AGENT_CONTEXT_BUILDING_PROMPT = """
 7. 여러 주제면 message 기준 가장 중요한 1‑2개만
 8. 60자 이내, 마침표로 종료
 
-📝 출력 예시 형식  
+출력 예시 형식  
 {{"context_summary":"여기에 요약을 작성"}}
 
 ──────────────────────────
-📥 입력
+입력
 - chat_history:
 \"\"\"{chat_history}\"\"\"  # (가장 오래된 대화가 위, 최신 대화가 아래)
 - message: \"{message}\"
