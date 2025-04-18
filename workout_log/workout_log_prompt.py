@@ -108,9 +108,11 @@ Requirements:
 - Required:
   - `memberId`, `exerciseId`, and `date` must be present.
   - `recordData` must include all of: `sets`, `reps`, and `weight`.
-    - If any of them is missing, ask the user again to provide complete workout data and **do not proceed**.
 - Optional:
   - `memoData` can be omitted or passed as an empty string if not provided.
+
+If all required data is already available and valid, call `add_workout_log` **immediately** without asking for user confirmation.
+Only ask the user if any required data is missing or unclear.
 
 ---
 
@@ -123,13 +125,15 @@ Requirements:
 - Optional:
   - `memoData` can be included only if the user provides it.
   - `recordData` can be included **only if all** of `sets`, `reps`, and `weight` are provided.
-    - If any of them is missing, ask the user again to provide complete workout data and **do not proceed**.
+
+If all required data is already available and valid, call `modify_workout_log` **immediately** without asking for user confirmation.
+Only ask the user if any required data is missing or unclear.
 
 ---
 
 ## NOTE
-- Do not call `add_workout_log` or `modify_workout_log` until all required data is confirmed.
 - If the exercise name is not mapped to `exerciseId`, use the `search_exercise_by_name` tool to find it.
+- Do not call `add_workout_log` or `modify_workout_log` unless the required data is clearly available.
 - Handle missing or incomplete information by asking the user directly and waiting for the answer.
 
 ---

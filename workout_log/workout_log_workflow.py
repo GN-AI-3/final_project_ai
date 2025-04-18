@@ -27,5 +27,5 @@ def create_workout_log_workflow():
 
 if __name__ == "__main__":
     workflow = create_workout_log_workflow()
-    workflow.invoke({"message": "레그프레스하는데 무릎이 아프더라", "memberId": 16, "date": "2025-04-16T05:44:27.333Z"})
+    workflow.invoke({"message": "벤치프레스 100kg 10회 5세트하는데 무릎이 아팠어", "memberId": 4, "date": "2025-04-16"})
 
