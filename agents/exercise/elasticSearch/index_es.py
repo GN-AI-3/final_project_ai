@@ -1,4 +1,9 @@
 from elasticsearch import Elasticsearch
+import os
+from dotenv import load_dotenv
+import psycopg2
+
+load_dotenv()
 
 es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
 
@@ -115,14 +120,72 @@ def search_exercise_by_name(name: str):
 
     return [hit for hit in hits if hit["_score"] >= threshold]
 
+def get_all_exercises():
+    """모든 운동 데이터를 인덱스 순서대로 조회"""
+    res = es.search(
+        index=exercise_index_name,
+        query={
+            "match_all": {}
+        },
+        sort=[
+            {"exercise_id": {"order": "asc"}}
+        ],
+        size=1000  # 충분히 큰 수로 설정
+    )
+    
+    return [hit["_source"] for hit in res["hits"]["hits"]]
+
 if __name__ == "__main__":
     # index_exercise(1, "벤치프레스")
     # index_exercise(2, "레그 프레스")
 
-    result = search_exercise_by_name("벤치 퓨레스")
-    for doc in result:
-        print(doc["_source"])
+    # for i in range(1, 50):
+    #     print(exercise_name[i - 1])
+    #     index_exercise(i, exercise_name[i - 1])
+
+    # result = search_exercise_by_name("벤치 퓨레스")
+    # for doc in result:
+    #     print(doc["_source"])
 
     # create_index_with_ngram()
 
     # es.indices.delete(index="exercises", ignore=[400, 404])
+
+    DB_CONFIG = {
+        "dbname": os.getenv("DB_DB"),
+        "user": os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "host": os.getenv("DB_HOST"),
+        "port": os.getenv("DB_PORT")
+    }
+    
+    exercises = get_all_exercises()
+    print(f"Found {len(exercises)} exercises")
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        for exercise in exercises:
+            if exercise['name'] not in ["벤치프레스", "레그프레스"]:
+                query = """
+                    INSERT INTO exercise (exercise_type, name)
+                    VALUES ('대중적인 운동', %s)
+                """
+                params = (exercise['name'],)
+                print(f"Inserting: {exercise['name']}")
+                cursor.execute(query, params)
+        
+        conn.commit()
+        print("Data inserted successfully")
+        
+    except Exception as e:
+        print(f"Error executing query: {e}")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
+            print("PostgreSQL connection is closed")
+        
+        
