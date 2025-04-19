@@ -5,6 +5,7 @@ from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import Runnable
 from langchain_community.utilities import SQLDatabase
 from ..utils import PG_URI, get_table_schema_only
+from trainer_chat.prompts.sql_prompt import SQL_PROMPT
 
 # 1. 상태 정의
 class SQLAgentState(TypedDict):
@@ -20,36 +21,7 @@ db = SQLDatabase.from_uri(PG_URI)
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # 4. SQLQueryGeneratorNode
-sql_prompt = PromptTemplate.from_template("""
-You are an AI that generates PostgreSQL SQL queries from natural language questions.
-
-## Inputs
-- Schema: 
-{schema}
-
-- User question: 
-"{user_question}"
-
-## Your task
-Generate an executable SQL query based on the question and the provided schema. Your query must:
-
-1. If applicable, handle relative time expressions using appropriate PostgreSQL functions such as:
-   - DATE_TRUNC()
-   - INTERVAL
-   - EXTRACT()
-
-2. Select:
-   - Primary keys of all involved tables
-   - All explicitly mentioned columns in the question
-   - Any columns clearly required to fulfill the intent of the question
-
-3. Exclude columns that are not relevant to answering the question.
-
-4. Ensure proper JOINs between tables when required.
-
-## Output
-Return only the final SQL query with no extra text, comments, or formatting.
-""")
+sql_prompt = PromptTemplate.from_template(SQL_PROMPT)
 
 def generate_sql(state: SQLAgentState) -> SQLAgentState:
     # TODO: 질문에 따른 테이블
