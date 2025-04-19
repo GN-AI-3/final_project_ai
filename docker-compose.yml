@@ -7,23 +7,11 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=1234
+    command: ["redis-server", "--requirepass", "1234"]
     networks:
       - ai-network
-
-  # fastapi:
-  #   build:
-  #     context: .
-  #   container_name: fastapi-ai
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8000:8000"
-  #   env_file:
-  #     - .env
-  #   depends_on:
-  #     - redis
-  #     - elasticsearch
-  #   networks:
-  #     - ai-network
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.1
@@ -48,6 +36,22 @@ services:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
     depends_on:
       - elasticsearch
+    networks:
+      - ai-network
+
+  fastapi:
+    build:
+      context: .
+    container_name: fastapi-ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - elasticsearch
+      - kibana
     networks:
       - ai-network
 
