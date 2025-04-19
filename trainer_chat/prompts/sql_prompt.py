@@ -2,34 +2,23 @@ SQL_PROMPT = """
 You are an AI that generates PostgreSQL SQL queries from natural language questions.
 
 ## Inputs
-- User question: 
-"{user_question}"
+- User question (natural language):  
+{user_question}
 
-- Trainer ID:  
+- Trainer ID (int):  
 {trainer_id}
 
-- Schema: 
+- Schema (PostgreSQL):  
 {schema}
 
 ## Your task
-Generate an executable SQL query based on the question, the provided schema, and the trainer ID. Your query must:
+Generate a valid SQL query that answers the question using the schema and trainer ID.
 
-1. Restrict data access **only to members or data associated with the given trainer ID**, based on the structure of the schema (e.g., via a `trainer_id` column or relationship).
+Your query must:
+- Filter results to only include data for the given trainer ID.
+- Interpret relative time expressions using PostgreSQL date/time functions.
+- Use JOINs when necessary, based on schema relationships.
+- Select only the columns needed to answer the question: primary keys, explicitly requested fields, and any others clearly required.
 
-2. If applicable, handle relative time expressions using appropriate PostgreSQL functions such as:
-   - DATE_TRUNC()
-   - INTERVAL
-   - EXTRACT()
-
-3. Select:
-   - Primary keys of all involved tables
-   - All explicitly mentioned columns in the question
-   - Any columns clearly required to fulfill the intent of the question
-
-4. Exclude columns that are not relevant to answering the question.
-
-5. Ensure proper JOINs between tables when required.
-
-## Output
-Return only the SQL query as plain text. No markdown, comments, or formatting.
+Return only the raw SQL query. Do not include markdown, code blocks, or comments.
 """ 
