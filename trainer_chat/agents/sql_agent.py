@@ -21,22 +21,40 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # 4. SQLQueryGeneratorNode
 sql_prompt = PromptTemplate.from_template("""
-Given the user's question and the following database schema:
+You are an AI that generates PostgreSQL SQL queries from natural language questions.
 
+## Inputs
+- Schema: 
 {schema}
 
-Write a PostgreSQL SQL query that answers this question:
+- User question: 
+"{user_question}"
 
-Question: {question}
-SQL:
+## Your task
+Generate an executable SQL query based on the question and the provided schema. Your query must:
+
+1. If applicable, handle relative time expressions using appropriate PostgreSQL functions such as:
+   - DATE_TRUNC()
+   - INTERVAL
+   - EXTRACT()
+
+2. Select:
+   - Primary keys of all involved tables
+   - All explicitly mentioned columns in the question
+   - Any columns clearly required to fulfill the intent of the question
+
+3. Exclude columns that are not relevant to answering the question.
+
+4. Ensure proper JOINs between tables when required.
+
+## Output
+Return only the final SQL query with no extra text, comments, or formatting.
 """)
 
 def generate_sql(state: SQLAgentState) -> SQLAgentState:
-    schema = db.get_table_info()
-    print("==== START ====")
-    print(schema)
-    print("==== END ====")
-    prompt = sql_prompt.format(schema=schema, question=state['user_input'])
+    # TODO: 질문에 따른 테이블
+    schema = db.get_table_info(table_names=['pt_schedule', 'pt_contract', 'member'])
+    prompt = sql_prompt.format(schema=schema, user_question=state['user_input'])
     sql = llm.invoke(prompt)
     return {**state, "sql_query": sql.content.strip()}
 
@@ -66,13 +84,14 @@ def generate_answer(state: SQLAgentState) -> SQLAgentState:
 builder = StateGraph(SQLAgentState)
 
 builder.add_node("generate_sql", generate_sql)
-builder.add_node("execute_sql", execute_sql)
-builder.add_node("generate_answer", generate_answer)
+# builder.add_node("execute_sql", execute_sql)
+# builder.add_node("generate_answer", generate_answer)
 
 builder.set_entry_point("generate_sql")
-builder.add_edge("generate_sql", "execute_sql")
-builder.add_edge("execute_sql", "generate_answer")
-builder.add_edge("generate_answer", END)
+builder.add_edge("generate_sql", END)
+# builder.add_edge("generate_sql", "execute_sql")
+# builder.add_edge("execute_sql", "generate_answer")
+# builder.add_edge("generate_answer", END)
 
 def create_sql_agent():
     return builder.compile()
@@ -83,13 +102,8 @@ if __name__ == "__main__":
     
     # 테스트용 입력 상태
     state = {
-        "user_input": "다음주 PT 일정 잡힌 회원 알려줘"
+        "user_input": "이번주 PT 일정 잡힌 회원 알려줘"
     }
     
     # 에이전트 실행
     final_state = app.invoke(state)
-    
-    # 결과 출력
-    print("🔍 SQL:", final_state["sql_query"])
-    print("📊 결과:", final_state["sql_result"])
-    print("💬 응답:", final_state["final_answer"])
