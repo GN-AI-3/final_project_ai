@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import Runnable
 from langchain_community.utilities import SQLDatabase
-from ..utils import PG_URI
+from ..utils import PG_URI, get_table_schema_only
 
 # 1. 상태 정의
 class SQLAgentState(TypedDict):
@@ -53,7 +53,7 @@ Return only the final SQL query with no extra text, comments, or formatting.
 
 def generate_sql(state: SQLAgentState) -> SQLAgentState:
     # TODO: 질문에 따른 테이블
-    schema = db.get_table_info(table_names=['pt_schedule', 'pt_contract', 'member'])
+    schema = get_table_schema_only(db._engine, ['pt_schedule', 'pt_contract', 'member'])
     prompt = sql_prompt.format(schema=schema, user_question=state['user_input'])
     sql = llm.invoke(prompt)
     return {**state, "sql_query": sql.content.strip()}
