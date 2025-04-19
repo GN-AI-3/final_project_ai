@@ -1,0 +1,42 @@
+name: Deploy AI Server to EC2 on Push
+
+on:
+  push:
+    branches:
+      - main   # 혹은 dev, 원하는 브랜치
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      - name: Deploy AI Server via SSH to EC2
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            # 작업 디렉토리로 이동
+            cd /home/ubuntu/final_project_ai
+
+            echo "[1] Pull latest code"
+            git pull origin main
+
+            echo "[2] Build and Run Docker Compose"
+            # docker-compose로 컨테이너 빌드 및 실행
+            docker-compose down   # 기존 컨테이너 종료
+            docker-compose build  # 새로 빌드
+            docker-compose up -d  # 백그라운드에서 실행
+
+            echo "[3] Docker Compose logs"
+            docker-compose logs -f  # 로그 확인 (필요한 경우)
