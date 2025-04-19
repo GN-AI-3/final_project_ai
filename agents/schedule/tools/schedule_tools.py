@@ -12,7 +12,7 @@ from ..utils.date_utils import validate_date_format
 from ..core.database import execute_query
 
 # API 기본 URL 설정
-API_BASE_URL = "http://43.203.235.179:8081/api"
+API_BASE_URL = "http://localhost:8081/api"
 # 인증 토큰 설정
 AUTH_TOKEN = os.getenv(
     "AUTH_TOKEN",
