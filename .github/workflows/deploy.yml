@@ -13,11 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up SSH key
-        uses: webfactory/ssh-agent@v0.5.3
-        with:
-          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
-
       - name: Deploy AI Server via SSH to EC2
         uses: appleboy/ssh-action@v0.1.7
         with:
