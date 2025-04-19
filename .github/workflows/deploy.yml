@@ -4,24 +4,22 @@ name: Deploy AI Server to EC2
 on:
   push:
     branches:
-      - main   # 필요하다면 dev 등 다른 브랜치도 추가
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) 코드 체크아웃
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-      # 2) SSH 키를 ssh-agent에 로드
+      # SSH 키를 에이전트에 로드
       - name: Load SSH key into ssh-agent
         uses: webfactory/ssh-agent@v0.5.3
         with:
           ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
 
-      # 3) EC2에 SSH로 접속해서 배포 스크립트 실행
+      # 단일 ssh 세션으로 배포
       - name: SSH & Deploy AI Server
         env:
           HOST: ${{ secrets.EC2_HOST }}
