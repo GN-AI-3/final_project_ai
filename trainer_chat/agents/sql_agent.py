@@ -26,7 +26,8 @@ sql_prompt = PromptTemplate.from_template(SQL_PROMPT)
 def generate_sql(state: SQLAgentState) -> SQLAgentState:
     # TODO: 질문에 따른 테이블
     schema = get_table_schema_only(db._engine, ['pt_schedule', 'pt_contract', 'member'])
-    prompt = sql_prompt.format(schema=schema, user_question=state['user_input'])
+    # TODO: trainer_id 바인딩
+    prompt = sql_prompt.format(schema=schema, user_question=state['user_input'], trainer_id=1)
     sql = llm.invoke(prompt)
     return {**state, "sql_query": sql.content.strip()}
 
@@ -56,12 +57,12 @@ def generate_answer(state: SQLAgentState) -> SQLAgentState:
 builder = StateGraph(SQLAgentState)
 
 builder.add_node("generate_sql", generate_sql)
-# builder.add_node("execute_sql", execute_sql)
+builder.add_node("execute_sql", execute_sql)
 # builder.add_node("generate_answer", generate_answer)
 
 builder.set_entry_point("generate_sql")
-builder.add_edge("generate_sql", END)
-# builder.add_edge("generate_sql", "execute_sql")
+builder.add_edge("generate_sql", "execute_sql")
+builder.add_edge("execute_sql", END)
 # builder.add_edge("execute_sql", "generate_answer")
 # builder.add_edge("generate_answer", END)
 
