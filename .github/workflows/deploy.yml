@@ -1,37 +1,43 @@
-name: Deploy AI Server to EC2 on Push
+# .github/workflows/deploy_ai.yml
+name: Deploy AI Server to EC2
 
 on:
   push:
     branches:
-      - main   # 혹은 dev, 원하는 브랜치
+      - main   # 필요하다면 dev 등 다른 브랜치도 추가
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # 1) 코드 체크아웃
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Deploy AI Server via SSH to EC2
-        uses: appleboy/ssh-action@v0.1.7
+      # 2) SSH 키를 ssh-agent에 로드
+      - name: Load SSH key into ssh-agent
+        uses: webfactory/ssh-agent@v0.5.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            # 작업 디렉토리로 이동
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      # 3) EC2에 SSH로 접속해서 배포 스크립트 실행
+      - name: SSH & Deploy AI Server
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USERNAME }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
             cd /home/ubuntu/final_project_ai
 
             echo "[1] Pull latest code"
             git pull origin main
 
-            echo "[2] Build and Run Docker Compose"
-            # docker-compose로 컨테이너 빌드 및 실행
-            docker-compose down   # 기존 컨테이너 종료
-            docker-compose build  # 새로 빌드
-            docker-compose up -d  # 백그라운드에서 실행
+            echo "[2] Stop existing containers"
+            docker-compose down || true
 
-            echo "[3] Docker Compose logs"
-            docker-compose logs -f  # 로그 확인 (필요한 경우)
+            echo "[3] Build & start services"
+            docker-compose up --build -d
+
+            echo "[4] Deployment finished"
+          EOF
