@@ -14,3 +14,8 @@ elasticsearch==8.17.2
 fastapi==0.115.12
 # langchain_teddynote
 schedule>=1.2.0
+torch>=2.0.0
+sentence-transformers>=2.2.2
+transformers>=4.31.0
+accelerate>=0.18.0
+huggingface_hub[hf_xet]>=0.16.0
