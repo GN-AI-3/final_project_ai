@@ -23,7 +23,7 @@ jobs:
       - name: SSH & Deploy AI Server
         env:
           HOST: ${{ secrets.EC2_HOST }}
-          USER: ${{ secrets.EC2_USERNAME }}
+          USER: ubuntu
         run: |
           ssh -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
             cd /home/ubuntu/final_project_ai
