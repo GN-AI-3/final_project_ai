@@ -1,5 +1,9 @@
+import os
+from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from .agents import create_teams_supervisor
+
+load_dotenv()
 
 if __name__ == "__main__":
     workflow = create_teams_supervisor()
