@@ -1,0 +1,41 @@
+# .github/workflows/deploy_ai.yml
+name: Deploy AI Server to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # SSH 키를 에이전트에 로드
+      - name: Load SSH key into ssh-agent
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      # 단일 ssh 세션으로 배포
+      - name: SSH & Deploy AI Server
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ubuntu
+        run: |
+          ssh -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
+            cd /home/ubuntu/final_project_ai
+
+            echo "[1] Pull latest code"
+            git pull origin main
+
+            echo "[2] Stop existing containers"
+            docker-compose down || true
+
+            echo "[3] Build & start services"
+            docker-compose up --build -d
+
+            echo "[4] Deployment finished"
+          EOF
