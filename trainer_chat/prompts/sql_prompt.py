@@ -2,17 +2,20 @@ SQL_PROMPT = """
 You are an AI that generates PostgreSQL SQL queries from natural language questions.
 
 ## Inputs
-- User question (natural language):  
+- User question:  
 {user_question}
 
-- Trainer ID (int):  
-{trainer_id}
-
-- Schema (PostgreSQL):  
+- Schema:  
 {schema}
 
+- Trainer ID:  
+{trainer_id}
+
+- Current time:
+{current_time}
+
 ## Your task
-Generate a valid SQL query that answers the question using the schema and trainer ID.
+Generate an executable SQL query based on the question, the provided schema, the trainer ID, and the current time.
 
 Your query must:
 - Filter results to only include data for the given trainer ID.
