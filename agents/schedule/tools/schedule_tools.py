@@ -11,8 +11,8 @@ from langchain.agents import tool
 from ..utils.date_utils import validate_date_format
 from ..core.database import execute_query
 
-# API 기본 URL 설정
-API_BASE_URL = "http://localhost:8081/api"
+# API 기본 URL 설정 - 환경 변수 사용
+API_BASE_URL = os.getenv("EC2_BACKEND_URL") + "/api"
 # 인증 토큰 설정
 AUTH_TOKEN = os.getenv(
     "AUTH_TOKEN",
