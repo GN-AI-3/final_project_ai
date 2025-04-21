@@ -1,3 +1,5 @@
+#!/bin/bash
+
 echo "[start.sh] ✅ Qdrant 분석기 실행 시작"
 python -m qdrant_utils.data_analyzer --mode schedule &
 
