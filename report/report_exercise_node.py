@@ -161,12 +161,21 @@ def add_data(state: reportState, llm: ChatOpenAI):
             "Content-Type": "application/json"
         }
 
-        requests.post(url, headers=headers, json=json_data)
+        response = requests.post(url, headers=headers, json=json_data)
         
+        if response.status_code != 200:
+            error_msg = f"API 요청 실패 (상태 코드: {response.status_code}): {response.text}"
+            print(error_msg)
+            state.response = error_msg
+            return state
+            
+        state.response = "운동 기록 저장 완료"
         return state
 
     except Exception as e:
-        print(f"운동 기록 저장 중 오류 발생: {str(e)}")
+        error_msg = f"운동 기록 저장 중 오류 발생: {str(e)}"
+        print(error_msg)
+        state.response = error_msg
         return state
 
 if __name__ == "__main__":

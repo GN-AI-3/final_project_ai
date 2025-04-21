@@ -6,4 +6,5 @@ class reportState(BaseModel):
     exercise_report: dict = {}
     diet_report: dict = {}
     inbody_report: dict = {}
+    response: str = ""
 
