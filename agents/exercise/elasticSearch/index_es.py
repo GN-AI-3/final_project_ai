@@ -5,7 +5,7 @@ import psycopg2
 
 load_dotenv()
 
-es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
+es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
 
 exercise_index_name = "exercises"
 

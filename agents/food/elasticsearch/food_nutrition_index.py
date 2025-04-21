@@ -12,7 +12,7 @@ pg_conn = psycopg2.connect(
 pg_cur = pg_conn.cursor()
 
 # Elasticsearch 연결
-es = Elasticsearch("http://localhost:9200")
+es = Elasticsearch("http://elasticsearch:9200")
 index_name = "food_nutrition_index"
 
 # ✅ 인덱스 재생성 (자동완성 + 오타 대응 설정 포함)

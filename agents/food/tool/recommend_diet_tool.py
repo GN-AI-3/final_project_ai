@@ -83,7 +83,7 @@ def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
         return {"error": f"API 호출 실패: {str(e)}"}
 
 # Elasticsearch 연결
-es = Elasticsearch(os.getenv("ELASTICSEARCH_URL", "http://localhost:9200"))
+es = Elasticsearch(os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200"))
 
 # PostgreSQL 연결
 pg_conn = psycopg2.connect(PG_URI)
