@@ -86,8 +86,15 @@ def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
 es = Elasticsearch(os.getenv("ELASTICSEARCH_URL", "http://localhost:9200"))
 
 # PostgreSQL 연결
-pg_conn = psycopg2.connect(PG_URI)
-pg_cur = pg_conn.cursor()
+def get_db_connection():
+    try:
+        return psycopg2.connect(PG_URI)
+    except Exception as e:
+        print(f"데이터베이스 연결 오류: {str(e)}")
+        return None
+
+pg_conn = get_db_connection()
+pg_cur = pg_conn.cursor() if pg_conn else None
 
 # 실제 DB 실행 유틸 (psycopg2 기반)
 def execute_sql(query: str) -> str:
@@ -95,29 +102,49 @@ def execute_sql(query: str) -> str:
         import datetime
         if isinstance(obj, (datetime.datetime, datetime.date)):
             return obj.isoformat()
-        if isinstance(obj, datetime.time):  # ✅ 이 부분 꼭 추가!
+        if isinstance(obj, datetime.time):
             return obj.strftime("%H:%M:%S")
         raise TypeError(f"Type {type(obj)} not serializable")
+    
+    global pg_conn, pg_cur
+    
     try:
-        conn = psycopg2.connect(PG_URI)
-        cur = conn.cursor()
-        cur.execute(query)
+        # 연결이 끊어졌거나 없는 경우 재연결
+        if not pg_conn or pg_conn.closed:
+            pg_conn = get_db_connection()
+            if not pg_conn:
+                return json.dumps({"status": "❌ 데이터베이스 연결 실패"}, ensure_ascii=False)
+            pg_cur = pg_conn.cursor()
+        
+        pg_cur.execute(query)
 
         if query.strip().lower().startswith("select"):
-            rows = cur.fetchall()
-            columns = [desc[0] for desc in cur.description]
+            rows = pg_cur.fetchall()
+            columns = [desc[0] for desc in pg_cur.description]
             data = [dict(zip(columns, row)) for row in rows]
             result = json.dumps(data, default=serialize, ensure_ascii=False, indent=2)
         else:
-            conn.commit()
+            pg_conn.commit()
             result = json.dumps({"status": "✅ SQL 실행 완료"}, ensure_ascii=False)
 
-        cur.close()
-        conn.close()
         return result
 
     except Exception as e:
         import traceback
+        # 에러 발생 시 연결 초기화
+        if pg_cur:
+            try:
+                pg_cur.close()
+            except:
+                pass
+        if pg_conn:
+            try:
+                pg_conn.close()
+            except:
+                pass
+        pg_cur = None
+        pg_conn = None
+        
         return json.dumps({
             "status": "❌ SQL 실행 오류",
             "error": str(e),
@@ -195,13 +222,12 @@ def extract_json_from_response(text: str) -> str:
 def strip_code_block(text: str) -> str:
     match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)  # ✅ 올바른 정규식
     return match.group(1).strip() if match else text.strip()
-
 @tool
 def save_user_goal_and_diet_info(params: dict) -> str:
     """
     자연어 입력에서 사용자 식단에 필요한 정보를 추출하고 DB에 자동 저장합니다.
     """
-
+    
     def extract_json_string(text: str) -> str:
         match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
         if match:
@@ -223,7 +249,7 @@ def save_user_goal_and_diet_info(params: dict) -> str:
         user_input = params.get("input", "")
         member_id = params.get("member_id", 1)
 
-
+        # 사용자의 입력을 분석하여 JSON으로 정리
         extract_prompt = f"""
         다음은 사용자의 자연어 입력이야. goal, gender, allergies 등의 정보를 추출해서 JSON으로 정리해줘.
         누락된 값은 빈 문자열("")로 표시하고, 아래 형식을 지켜줘.
@@ -243,29 +269,32 @@ def save_user_goal_and_diet_info(params: dict) -> str:
           "food_avoidances": "..."
         }}
         """
+        
+        # LLM 호출
         response = llm.invoke([HumanMessage(content=extract_prompt)])
         raw_response = response.content.strip()
 
         if not raw_response:
             return "❌ LLM 응답이 비어 있습니다."
 
+        # JSON 추출
         json_str = extract_json_string(raw_response)
-
+        
+        # JSON 파싱
         try:
             parsed = json.loads(json_str)
         except Exception as e:
             return f"❌ JSON 파싱 실패: {e}\n\n[응답 내용]\n{raw_response}"
 
-
-        # member 업데이트
+        # DB에 저장: 사용자 목표, 알레르기 등
         if parsed.get("goal") or parsed.get("gender"):
             member_data = {
                 "memberId": member_id,
                 "goal": parsed.get("goal", "")
             }
-            member_result = call_spring_api("/member/update", member_data, method="PUT")
+            member_result = call_spring_api("/api/member/update", member_data, method="POST")
 
-        # diet_info 저장
+        # 식단 정보 저장
         if any([
             parsed.get("allergies"),
             parsed.get("food_preferences"),
@@ -281,8 +310,9 @@ def save_user_goal_and_diet_info(params: dict) -> str:
                 "activityLevel": parsed.get("activity_level", ""),
                 "specialRequirements": parsed.get("special_requirements", "")
             }
-            method = "PUT" if check_diet_info_exists(member_id) else "POST"
-            result = call_spring_api("/food/user/diet-info"+"", diet_info_data, method=method)
+
+            result = call_spring_api("/api/food/user/diet-info", diet_info_data, method="POST")
+
             if "error" in result:
                 return f"❌ 식단 정보 저장 실패: {result['error']}"
 
@@ -476,12 +506,23 @@ def recommend_food_tool(params: dict) -> str:
 
     response = llm.invoke([HumanMessage(content=prompt)])
     return response.content.strip()
+from langchain.tools import tool
+import json
+from datetime import datetime
+from langchain.tools import tool
+from langchain.schema import HumanMessage
+from datetime import datetime
+import json
+import re
+import traceback
+
 @tool
 def recommend_diet_tool(params: dict) -> str:
     """
-    사용자 ID에 기반해 개인 맞춤 식단을 추천합니다.
-    goal, gender, allergies, special_requirements 등을 반영합니다.
+    사용자 ID에 기반해 개인 맞춤 식단을 추천하고,
+    TDEE 기반 영양 목표, 요약, 피드백 및 DB 저장까지 수행합니다.
     """
+
     def normalize(val: str, fallback: str = "없음"):
         return val if val and str(val).lower() not in ["null", "none"] else fallback
 
@@ -493,7 +534,6 @@ def recommend_diet_tool(params: dict) -> str:
         return "하루"
 
     def extract_json_block(text: str) -> str:
-        import re
         match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
         if match:
             return match.group(1)
@@ -504,89 +544,126 @@ def recommend_diet_tool(params: dict) -> str:
                 return text
         return text
 
-    # ✅ 사용자 정보 파싱
-    member_id = params.get("member_id", 1)
-    raw_period = params.get("period") or params.get("meal_type") or "하루"
-    period = standardize_period(raw_period)
-
-    context = params.get("context", {})
-    member_info = context.get("member", {})
-    diet_info = context.get("user_diet_info", {})
-
-    goal = normalize(member_info.get("goal"))
-    gender = normalize(member_info.get("gender"), "F")
-    special = normalize(diet_info.get("special_requirements"))
-    allergies = normalize(diet_info.get("allergies"))
-    preferences = normalize(diet_info.get("food_preferences"))
-    pattern = normalize(diet_info.get("meal_pattern"))
-    avoidances = normalize(diet_info.get("food_avoidances"))
-    # ✅ 식단 예시 조회
-    example_sql = f"""
-    SELECT breakfast, lunch, dinner
-    FROM diet_plans
-    WHERE diet_type ILIKE '%{goal}%'
-    AND user_gender = '{gender}'
-    ORDER BY RANDOM() 
-    LIMIT 3;
-    """
-    example_data = execute_sql(example_sql)
-
-    # ✅ 포맷 지정
-    if period == "하루":
-        plan_format = '''"monday": {"아침": "...", "점심": "...", "저녁": "..."}'''
-    elif period == "일주일":
-        plan_format = '''"monday": {"아침": "...", "점심": "...", "저녁": "..."}, "tuesday": {...}, ...'''
-    elif period == "한끼":
-        plan_format = '''"meal": "..."'''
-    else:
-        plan_format = '''"monday": {"아침": "...", "점심": "...", "저녁": "..."}'''
-    recent_plan_json = execute_sql("SELECT food_name FROM meal_records WHERE member_id = {member_id} ORDER BY meal_date DESC LIMIT 15")  # 최근 2주
-    # ✅ 프롬프트 구성
-    prompt = f"""
-    한국 사용자에게 맞춤 식단을 {period} 기준으로 추천해줘.
-
-    [사용자 정보]
-    - 목표: {goal}
-    - 성별: {gender}
-    - 기타 사항: {special}
-    - 알레르기: {allergies}
-    - 음식 기호: {preferences}
-    - 식사 패턴: {pattern}
-    - 거부 음식: {avoidances}
-    [식단 예시] 참고만 해
-    {example_data}
-
-    다음 JSON은 최근 최근 식단이야. 겹치는 메뉴는 최대한 피해서 새로운 안을 제안해 줘.
-   {json.dumps(recent_plan_json, ensure_ascii=False)}
-    ⚠️ 이전에 추천했던 식단(재료·조리법 포함)과 **50 % 이상 다른 구성**이 되도록,
-    가능하면 새로운 식재료·조리법을 섞어 줘.
-    
-    출력 형식(JSON):
-    {{
-      "scope": "{period}",
-      "plan": {{
-        {plan_format}
-      }},
-      "summary": {{
-        "총칼로리": "...",
-        "단백질": "...",
-        "탄수화물": "...",
-        "지방": "..."
-      }},
-      "comment": "추천 이유 및 주의사항"
-    }}
-    """
-
-    response = llm.invoke([HumanMessage(content=prompt)])
-    plan_result = response.content.strip()
-
-    # ✅ 후처리 (파싱 및 보완)
     try:
+        # ✅ 입력 파싱
+        member_id = int(params.get("member_id", 1))
+        raw_period = params.get("period") or params.get("meal_type") or "하루"
+        period = standardize_period(raw_period)
+
+        context = params.get("context", {})
+        member_info = context.get("member", {})
+        diet_info = context.get("user_diet_info", {})
+
+        goal_raw = normalize(member_info.get("goal"), "체중 감량")
+        gender = normalize(member_info.get("gender"), "남성")
+        special = normalize(diet_info.get("special_requirements"))
+        allergies = normalize(diet_info.get("allergies"))
+        preferences = normalize(diet_info.get("food_preferences"))
+        pattern = normalize(diet_info.get("meal_pattern"))
+        avoidances = normalize(diet_info.get("food_avoidances"))
+
+        # ✅ goal 분류 (6개 중 하나)
+        goal_prompt = f"""
+        다음 목표를 아래 식단 유형 중 하나로 분류해줘:
+        - 다이어트 식단
+        - 벌크업 식단
+        - 체력 증진 식단
+        - 유지/균형 식단
+        - 고단백/저탄수화물 식단
+        - 고탄수/고단백 식단
+        목표: {goal_raw}
+        """
+        goal_response = llm.invoke([HumanMessage(content=goal_prompt)]).content.strip()
+        goal = goal_response if goal_response in [
+            "다이어트 식단", "벌크업 식단", "체력 증진 식단",
+            "유지/균형 식단", "고단백/저탄수화물 식단", "고탄수/고단백 식단"
+        ] else "유지/균형 식단"
+
+        # ✅ TDEE 및 영양 목표 계산
+        height = float(member_info.get("height", 170))
+        weight = float(member_info.get("weight", 70))
+        birth_date = member_info.get("birth_date", "2000-01-01")
+        birth = datetime.strptime(birth_date, "%Y-%m-%d")
+        today = datetime.now()
+        age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        bmi = weight / ((height / 100) ** 2)
+        bmr = 10 * weight + 6.25 * height - 5 * age + (5 if gender == "남성" else -161)
+        tdee = bmr * 1.2
+
+        if "감량" in goal or "다이어트 식단" in goal:
+            target_calories = tdee - 500
+        elif "증가" in goal or "벌크업 식단" in goal:
+            target_calories = tdee + 500
+        else:
+            target_calories = tdee
+
+        nutrition_goals = {
+            "target_calories": round(target_calories),
+            "protein": round((target_calories * 0.3) / 4),
+            "carbs": round((target_calories * 0.4) / 4),
+            "fat": round((target_calories * 0.3) / 9),
+        }
+
+        # ✅ 식단 예시 조회
+        example_sql = f"""
+        SELECT breakfast, lunch, dinner
+        FROM diet_plans
+        WHERE diet_type = '{goal}'
+        AND user_gender = '{gender}'
+        LIMIT 3;
+        """
+        example_data = execute_sql(example_sql)
+
+        # ✅ LLM 프롬프트 구성
+        if period == "하루":
+            plan_format = '"monday": {"아침": "...", "점심": "...", "저녁": "..."}'
+        elif period == "일주일":
+            plan_format = '"monday": {"아침": "...", "점심": "...", "저녁": "..."}, "tuesday": {...}, ...'
+        elif period == "한끼":
+            plan_format = '"meal": "..."'
+        else:
+            plan_format = '"monday": {"아침": "...", "점심": "...", "저녁": "..."}'
+
+        prompt = f"""
+        한국 사용자에게 맞춤 식단을 {period} 기준으로 추천해줘.
+
+        [사용자 정보]
+        - 목표: {goal_raw}
+        - 성별: {gender}
+        - 기타 사항: {special}
+        - 알레르기: {allergies}
+        - 음식 기호: {preferences}
+        - 식사 패턴: {pattern}
+        - 거부 음식: {avoidances}
+        - 목표 영양소: {nutrition_goals}
+
+        [식단 예시]
+        {example_data}
+
+        출력 형식(JSON):
+        {{
+          "scope": "{period}",
+          "plan": {{
+            {plan_format}
+          }},
+          "summary": {{
+            "총칼로리": "...",
+            "단백질": "...",
+            "탄수화물": "...",
+            "지방": "..."
+          }},
+          "comment": "추천 이유 및 주의사항"
+        }}
+        """
+
+        response = llm.invoke([HumanMessage(content=prompt)])
+        plan_result = response.content.strip()
+
+        # ✅ 후처리
         raw_json = extract_json_block(plan_result)
         plan_json = json.loads(raw_json)
         json_text = extract_json_block(plan_result)
 
-        # ✅ 요약 계산
         if not plan_json.get("summary") or "0 kcal" in json.dumps(plan_json["summary"]):
             summary = summarize_nutrition_tool.invoke({
                 "params": {
@@ -595,28 +672,33 @@ def recommend_diet_tool(params: dict) -> str:
             })
             plan_json["summary"] = json.loads(summary)
 
-        # 💬 피드백
         feedback = diet_feedback_tool.invoke({
             "params": {
-                "input": extract_json_block(plan_result),
+                "input": json_text,
                 "member_id": member_id,
                 "goal": goal
             }
         })
         plan_json["feedback"] = json.loads(feedback)
-        
-        # ✅ 추천 식단 저장
+        plan_json["nutrition_goals"] = nutrition_goals
+
+        # ✅ 식단 DB 저장
         save_result = save_recommended_diet.invoke({
             "params": {
                 "user_input": json.dumps(plan_json, ensure_ascii=False),
                 "member_id": member_id
             }
         })
-        print("식단 저장 성공",save_result)
+        plan_json["save_result"] = save_result
+
         return json.dumps(plan_json, ensure_ascii=False, indent=2)
 
     except Exception as e:
-        return f"❌ 응답 파싱 실패 또는 LLM 출력 오류\n\n{plan_result}\n\n📛 오류: {str(e)}"
+        return json.dumps({
+            "status": "❌ 식단 추천 오류",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }, ensure_ascii=False)
 
 @tool
 def validate_result_tool(params: dict) -> str:
@@ -822,27 +904,30 @@ def meal_parser_tool(params: dict) -> str:
     """
     response = llm.invoke([HumanMessage(content=prompt)])
     return response.content.strip()
-
 @tool
 def save_recommended_diet(params: dict) -> str:
     """
     추천된 식단(JSON)을 recommended_diet_plans 테이블에 저장
     """
-    
-    plan = json.loads(params.get("user_input", "{}"))
-    member_id = params.get("member_id", 1)
-
-    day = plan.get("scope", "daily")
-    plan_json = plan.get("plan", {})
-    summary = plan.get("summary", {})
-    comment = plan.get("comment", "")
-
     try:
-        # SQL 인젝션 방지를 위해 파라미터화된 쿼리 사용
+        # ✅ JSON 문자열 또는 dict 모두 처리
+        user_input = params.get("user_input", "{}")
+        if isinstance(user_input, dict):
+            plan = user_input
+        else:
+            plan = json.loads(user_input)
+
+        member_id = params.get("member_id", 1)
+
+        day = plan.get("scope", "daily")
+        plan_json = plan.get("plan", {})
+        summary = plan.get("summary", {})
+        comment = plan.get("comment", "")
+
+        # PostgreSQL 저장
         conn = psycopg2.connect(PG_URI)
         cur = conn.cursor()
-        
-        # 한끼 추천인 경우
+
         if day == "한끼":
             meal = plan_json.get("meal", "")
             cur.execute("""
@@ -850,25 +935,23 @@ def save_recommended_diet(params: dict) -> str:
                 (member_id, plan_scope, plan_summary, breakfast_plan, lunch_plan, dinner_plan, plan_day)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (member_id, day, comment, meal, "", "", "single"))
-        # 하루 또는 일주일 추천인 경우
         else:
-            # 모든 요일의 식단을 저장
             for day_name, meals in plan_json.items():
                 breakfast = meals.get("아침", "")
                 lunch = meals.get("점심", "")
                 dinner = meals.get("저녁", "")
-                
                 cur.execute("""
                     INSERT INTO recommended_diet_plans 
                     (member_id, plan_scope, plan_summary, breakfast_plan, lunch_plan, dinner_plan, plan_day)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (member_id, day, comment, breakfast, lunch, dinner, day_name))
-        
+
         conn.commit()
         cur.close()
         conn.close()
-        
+
         return "✅ 추천 식단 저장 완료"
+
     except Exception as e:
         return f"❌ 저장 실패: {e}"
 
@@ -1244,6 +1327,10 @@ def record_meal_tool(params: dict) -> str:
 
             # ✅ 중복 체크 및 저장
             # is_duplicate = check_duplicate_meal_via_sql(member_id, food_name, meal_type)
+            print(member_id, food_name, meal_type)
+            print(portion, unit)
+            print(calories, protein, carbs, fat)
+            print(results)  
             meal_data = {
                 "memberId": member_id,
                 "foodName": food_name,
@@ -1255,10 +1342,10 @@ def record_meal_tool(params: dict) -> str:
                 "carbs": carbs,
                 "fat": fat
             }
-
-            api_result = call_spring_api("/food/insert-meal", meal_data, "POST")
+            print(meal_data)
+            api_result = call_spring_api("/api/food/insert-meal", meal_data, "POST")
             status = "✅ 신규 기록 저장"
-        
+            print(api_result)
             results.append({
                 "status": status,
                 "food": food_name,
