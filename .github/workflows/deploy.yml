@@ -33,7 +33,7 @@ jobs:
             docker-compose down || true
 
             echo "[3] Prune only dangling images"
-            docker image prune -f || true
+            docker image prune -af || true
 
             echo "[4] Pull all service images (fastapi will be built locally)"
             docker-compose pull || true
