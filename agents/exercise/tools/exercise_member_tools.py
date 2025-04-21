@@ -67,13 +67,11 @@ def get_user_goal(user_id: str) -> str:
     query = f"SELECT goal FROM member WHERE id = '{user_id}';"
     print("query: ", query)
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute(query)
-        result = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return str(result)
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                result = cursor.fetchall()
+                return str(result)
     except Exception as e:
         return f"Database error: {str(e)}"
     
@@ -83,12 +81,10 @@ def get_user_physical_info(user_id: str) -> str:
     query = f"SELECT tall, weight, bmi FROM inbody WHERE member_id = {user_id};"
     print("query: ", query)
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute(query)
-        result = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                result = cursor.fetchall()
 
         if result:
             row = result[0]
@@ -110,13 +106,11 @@ def get_user_exercise_record(user_id: str) -> str:
     query = f"SELECT * FROM exercise_record WHERE member_id = {user_id};"
     print("query: ", query)
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute(query)
-        result = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return str(result)
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                result = cursor.fetchall()
+                return str(result)
     except Exception as e:
         return f"Database error: {str(e)}"
 
@@ -160,16 +154,14 @@ def master_select_db(table_name: str, column_name: str, value: str) -> str:
 
         params = (value,)
 
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        column_names = [desc[0] for desc in cursor.description]
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                column_names = [desc[0] for desc in cursor.description]
 
-        result = [dict(zip(column_names, row)) for row in rows]
-        cursor.close()
-        conn.close()
-        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+                result = [dict(zip(column_names, row)) for row in rows]
+                return json.dumps(result, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         return f"Database error: {str(e)}"
 
@@ -206,16 +198,14 @@ def master_select_db_multi(
 
         params = tuple(conditions.values())
 
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        column_names = [desc[0] for desc in cursor.description]
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                column_names = [desc[0] for desc in cursor.description]
 
-        result = [dict(zip(column_names, row)) for row in rows]
-        cursor.close()
-        conn.close()
-        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+                result = [dict(zip(column_names, row)) for row in rows]
+                return json.dumps(result, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"error": f"Database error: {str(e)}"})
     
