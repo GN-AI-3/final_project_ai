@@ -14,7 +14,6 @@ def refine_node(state: AgentState) -> AgentState:
     else:
         raw_text = agent_out.strip()
 
-    print(f"🔍 정제 대상 텍스트:\n{raw_text[:300]}...")
 
     def extract_json(text: str) -> str:
         match = re.search(r"```(?:json)?\s*([\[{].*?[\]}])\s*```", text, re.DOTALL)
@@ -41,7 +40,10 @@ def refine_node(state: AgentState) -> AgentState:
 📦 JSON 응답:
 {cleaned_result}
 
-→ 위 응답을 사람이 이해할 수 있도록 자연어로 정리해줘.
+→ 위 응답을 사람이 이해할 수 있도록 마크다운을 제거하고, 
+좀 더 자연스럽고 읽기 쉽게 정리해서 설명해줘. 
+특수문자도 제거해서 깔끔한 텍스트로 바꿔줘.
+
 """
 
     try:

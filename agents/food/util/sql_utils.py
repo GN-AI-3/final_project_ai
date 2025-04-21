@@ -1,15 +1,10 @@
 # make/sql_utils.py
 import psycopg2
+from ..config.database_config import PG_URI
 
 def fetch_table_data(table: str, member_id: int):
     try:
-        conn = psycopg2.connect(
-            host="3.37.8.185",
-            port=5433,
-            dbname="gym",
-            user="postgres",
-            password="1234"
-        )
+        conn = psycopg2.connect(PG_URI)
         cur = conn.cursor()
 
         query_map = {
@@ -28,7 +23,7 @@ def fetch_table_data(table: str, member_id: int):
             "inbody": """
                 SELECT *
                 FROM inbody
-                WHERE inbody_record_id = %s
+                WHERE inbody_id = %s
                 ORDER BY date DESC NULLS LAST
                 LIMIT 1
             """,
@@ -49,3 +44,22 @@ def fetch_table_data(table: str, member_id: int):
 
     except Exception as e:
         return {"error": str(e)}
+
+def execute_query(query: str) -> str:
+    """
+    SQL 쿼리를 실행하고 결과를 반환하는 함수
+    """
+    try:
+        conn = psycopg2.connect(PG_URI)
+        cur = conn.cursor()
+        cur.execute(query)
+        result = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if not result:
+            return "데이터가 없습니다."
+            
+        return str(result)
+    except Exception as e:
+        return f"쿼리 실행 중 오류 발생: {str(e)}"

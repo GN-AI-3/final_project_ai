@@ -23,7 +23,7 @@ graph = StateGraph(AgentState)
 
 # ✅ 노드 등록
 graph.add_node("planner", planner_node)
-graph.add_node("ask_user", ask_user_node)
+graph.add_node("ask_user_node", ask_user_node)
 graph.add_node("tool_executor", tool_executor_node)
 graph.add_node("retry", retry_node)
 graph.add_node("refine", refine_node)
@@ -33,7 +33,7 @@ graph.set_entry_point("planner")
 graph.add_conditional_edges(
     "planner",
     lambda state: (
-        "ask_user"
+        "ask_user_node"
         if state.parsed_plan.get("ask_user") and len(state.parsed_plan["ask_user"]) > 0
         else "tool_executor"
         if state.parsed_plan.get("tool_name") == "save_user_goal_and_diet_info"
@@ -66,22 +66,39 @@ graph.add_edge("tool_executor", "retry")
 graph.add_edge("retry", "refine")
 
 # ✅ 종료 지점 설정
-graph.set_finish_point("ask_user")  # 질문만 있을 때 종료
+graph.set_finish_point("ask_user_node")  # 질문만 있을 때 종료
 graph.set_finish_point("refine")  
 # ✅ 컴파일
 compiled_graph = graph.compile()
 
 # ✅ 실행 함수
-def run_super_agent(user_input: str, member_id: int = 3):
-    return compiled_graph.invoke({
+async def run_super_agent(user_input: str, member_id: int = 3, user_info: Optional[Dict[str, Any]] = None):
+    # user_info가 None이면 빈 딕셔너리로 초기화
+    user_info = user_info or {}
+    
+    # context에 user_info 추가
+    context = {
+        "user_info": user_info,
+        "user_profile_saved": False  # 기본값 설정
+    }
+    
+    result = await compiled_graph.ainvoke({
         "user_input": user_input,
         "member_id": member_id,
         "context": {},
         "parsed_plan": {},
-        "tool_result": "",      # ✅ 추가
-        "agent_out": "",        # ✅ 추가
-        "retry_count": 0        # ✅ 추가
+        "tool_result": "",
+        "agent_out": "",
+        "retry_count": 0
     })
+    
+    # 결과가 문자열이 아니면 문자열로 변환
+    if isinstance(result, dict) and 'agent_out' in result:
+        return str(result['agent_out'])
+    elif isinstance(result, dict):
+        return str(result)
+    else:
+        return str(result)
 
 
 # ✅ 질문 응답 후 재시작 함수

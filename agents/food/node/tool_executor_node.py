@@ -14,10 +14,6 @@ def tool_executor_node(state: AgentState) -> AgentState:
     member_id = state.member_id
     context = state.context or {}
 
-    print("\n🛠️ [tool_executor_node 시작]")
-    print("🧩 실행 도구 이름:", tool_name)
-    print("📦 tool_input 값:", tool_input)
-    print("📂 현재 context:", context)
 
     tool_fn = tool_map.get(tool_name)
 
@@ -28,7 +24,9 @@ def tool_executor_node(state: AgentState) -> AgentState:
             agent_out=f"❌ 존재하지 않는 도구입니다: {tool_name}",
             context=context,
             tool_result="",
-            retry_count=state.retry_count
+            retry_count=state.retry_count,
+            tool_name=tool_name,
+            tool_input=tool_input
         )
 
     try:
@@ -46,7 +44,6 @@ def tool_executor_node(state: AgentState) -> AgentState:
 
         # ✅ 도구 실행 (LangChain Tool은 {"params": ...} 구조 필요)
         result = tool_fn.invoke({"params": tool_input})
-        print("✅ 도구 실행 결과:", result)
 
         # ✅ 저장 완료 여부 표시
         if tool_name == "save_user_goal_and_diet_info":
@@ -59,7 +56,9 @@ def tool_executor_node(state: AgentState) -> AgentState:
             context=context,
             tool_result=result,
             agent_out=f"✅ {tool_name} 실행 결과\n→ {result}",
-            retry_count=0
+            retry_count=0,
+            tool_name=tool_name,
+            tool_input=tool_input
         )
 
     except Exception as e:
@@ -70,5 +69,7 @@ def tool_executor_node(state: AgentState) -> AgentState:
             context=context,
             tool_result="",
             agent_out=f"❌ 도구 실행 실패: {tool_name}\n에러: {str(e)}",
-            retry_count=state.retry_count + 1
+            retry_count=state.retry_count + 1,
+            tool_name=tool_name,
+            tool_input=tool_input
         )

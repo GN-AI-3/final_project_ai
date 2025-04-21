@@ -48,6 +48,7 @@ def retry_node(state: AgentState) -> AgentState:
             "context": {**context, "user_profile_saved": True}
         })
     if state.tool_name == "record_meal_tool":
+        
         return state.copy(update={
             "agent_out": "✅ 식사 기록 도구는 평가 없이 완료됩니다.",
             "next_node": "refine"
@@ -131,7 +132,6 @@ def retry_node(state: AgentState) -> AgentState:
 
         # 3-2️⃣ 결과 적절
         return state.copy(update={
-            "agent_out": f"✅ 결과 평가 완료: 적절한 결과입니다.\n→ {tool_result}",
             "context": context
         })
 
