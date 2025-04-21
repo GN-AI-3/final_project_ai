@@ -1,4 +1,4 @@
- 
+# planner_node.py
 import json
 from typing import Any, Dict
 from langchain.schema import HumanMessage
@@ -18,7 +18,36 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
 [💡 핵심 목표]
 - 사용자 요청을 해결하기 위해 필요한 정보를 판단하고
 - 도구 실행, 질문 생성, SQL 조회 여부 등을 포함한 계획을 수립해줘.
+[💡 핵심 원칙]
 
+1. ✅ 식단 추천 요청 시에만 필수 정보(goal, allergies 등)가 없으면 질문을 생성해야 해
+    - recommend_diet_tool 실행 시 context 또는 입력에 아래 항목 중 하나라도 없으면 → ask_user 필드에 질문 생성
+    - 필수 항목 목록:
+        - goal
+        - allergies
+        - food_preferences
+        - food_avoidances
+    - 단, 값이 "없음", "없어요", "없습니다" 등으로 명확하게 주어진 경우는 질문 없이 "없음"으로 처리 가능
+    - 모호한 응답(예: "잘 모르겠어요", "모름")은 → 질문 유도 대상
+
+2. ✅ 식단 추천 요청이 아닌 다른 요청(record_meal_tool 등)에서는 질문이 절대 발생하면 안 됨
+    - 입력에 "먹었", "먹음", "섭취" 등의 키워드가 포함되면 → record_meal_tool 실행
+    - 이 경우 필수 정보가 없어도 질문 생성은 ❌ 금지
+
+3. ✅ save_user_goal_and_diet_info 도구는 값이 명시된 경우에만 실행
+    - goal, allergies, food_preferences, food_avoidances 중 하나라도 명시된 경우 → save_user_goal_and_diet_info 실행
+    - 명시된 값이 하나도 없다면 도구 실행 ❌, 대신 → ask_user 질문을 생성해야 함
+
+4. ✅ "이번주 식단 짜줘"는 과거 기록이 아니라 향후 일주일 식단 추천 요청
+    - 이 경우 recommend_diet_tool 실행
+    - tool_input에 period = "일주일" 반드시 포함
+
+5. ✅ "오늘 점심 뭐 먹을까?"는 한끼 식단 추천 요청
+    - 이 경우 recommend_diet_tool 실행
+    - tool_input에 period = "한끼", meal_type = "점심" 포함되어야 함
+    - "아침", "저녁"도 동일하게 meal_type 지정
+6. **"이번 주 식단 분석해줘"**라는 요청이 들어오면 weekly_average_tool을 사용합니다.
+7. **"최근 식사 기록을 TDEE와 비교해줘"**라는 요청이 들어오면 meal_record_gap_report_tool을 사용합니다.
 [0. 의도 감지 우선 순위]
 - "바나나 먹었어", "점심에 라면 먹음" 같은 입력 → record_meal_tool 실행
 - "식단 추천해줘" → recommend_diet_tool 실행
