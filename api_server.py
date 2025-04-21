@@ -15,6 +15,7 @@ from datetime import datetime
 import uuid
 
 from pt_log.pt_log_workflow import create_pt_log_workflow
+from report.report_workflow import create_report_workflow
 from workout_log.workout_log_workflow import create_workout_log_workflow
 # 대화 내역 관리자 임포트
 from chat_history_manager import ChatHistoryManager
@@ -106,6 +107,12 @@ class WorkoutLogRequest(BaseModel):
 
 class WorkoutLogResponse(BaseModel):
     memberId: int
+    timestamp: str
+    final_response: str
+    execution_time: Optional[float] = None
+
+class ReportResponse(BaseModel):
+    ptContractId: int
     timestamp: str
     final_response: str
     execution_time: Optional[float] = None
@@ -334,5 +341,36 @@ async def workout_log(workout_log_request: WorkoutLogRequest):
             execution_time=0
         )
 
+@app.post("/report")
+async def report(ptContractId: int):
+    request_id = str(uuid.uuid4())
+
+    logger.info(f"[{request_id}] 보고서 요청 - ptContractId: {ptContractId}")
+
+    try:
+        workflow = create_report_workflow()
+
+        start_time = datetime.now()
+        result = workflow.invoke({"ptContractId": ptContractId})
+        elapsed = (datetime.now() - start_time).total_seconds()
+
+        logger.info(f"[{request_id}] 보고서 처리 완료 (소요: {elapsed:.2f}s)")
+
+        return ReportResponse(
+            ptContractId=ptContractId,
+            timestamp=datetime.now().isoformat(),
+            final_response=result.get("response", ""),
+            execution_time=elapsed
+        )
+    
+    except Exception as e:
+        logger.error(f"[{request_id}] 보고서 처리 오류: {str(e)}")
+        return ReportResponse(
+            ptContractId=ptContractId,
+            timestamp=datetime.now().isoformat(),
+            final_response=f"처리 중 오류가 발생했습니다: {str(e)}",
+            execution_time=0
+        )
+    
 if __name__ == "__main__":
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)

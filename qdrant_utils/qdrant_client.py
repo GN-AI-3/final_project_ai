@@ -16,13 +16,15 @@ from qdrant_client.http import models
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# 로깅 설정
+LOG_DIR = "qdrant_utils/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("qdrant_utils/logs/qdrant_client.log", mode='a')
+        logging.FileHandler(os.path.join(LOG_DIR, "qdrant_client.log"), mode='a')
     ]
 )
 logger = logging.getLogger(__name__)
