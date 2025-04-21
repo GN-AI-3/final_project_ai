@@ -56,15 +56,11 @@ def is_workout_log_exist(ptScheduleId: int) -> str:
 
     params = (ptScheduleId,)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows[0][0] if rows else None
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows[0][0] if rows else None
 
 def add_workout_log(data: dict | str) -> str:
     """
@@ -115,15 +111,11 @@ def is_exercise_log_exist(data: dict | str) -> str:
 
     params = (ptLogId, exerciseId)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows[0][0] if rows else None
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows[0][0] if rows else None
 
 def modify_workout_log(data: dict | str) -> str:
     """
