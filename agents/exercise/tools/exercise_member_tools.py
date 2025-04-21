@@ -83,7 +83,7 @@ def get_user_physical_info(user_id: str) -> str:
     try:
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, params)
+                cursor.execute(query)
                 result = cursor.fetchall()
 
         if result:
