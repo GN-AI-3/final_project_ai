@@ -7,6 +7,7 @@ import json
 import os
 import re
 import logging
+import traceback
 
 # 중앙화된 프롬프트 임포트
 from ..prompts.prompt_templates import (
@@ -72,7 +73,7 @@ class MotivationAgent(BaseAgent):
         사용자 이메일이 제공된 경우 DB에서 사용자 목표를 가져와 프롬프트에 통합합니다.
         
         Args:
-            message (str): 사용자 메시지
+            message (str): 사용자 메시지 또는 context_info JSON 문자열
             email (Optional[str]): 사용자 이메일 (DB 조회용)
             chat_history (Optional[List[Dict[str, Any]]]): 대화 내역 (선택사항)
             
@@ -80,16 +81,35 @@ class MotivationAgent(BaseAgent):
             Dict[str, Any]: 동기부여 응답과 관련 정보
         """
         try:
-            # 대화 내역 사용 (향후 기능)
-            # 현재는 사용하지 않지만, 필요할 경우 여기서 활용할 수 있음
+            # message가 context_info JSON 문자열인지 확인하고 파싱
+            actual_message = message
+            context_data = {}
+            
+            try:
+                # JSON 문자열 여부 확인
+                if isinstance(message, str) and (message.startswith('{') and message.endswith('}')):
+                    try:
+                        context_data = json.loads(message)
+                        # context_summary가 있으면 실제 메시지로 사용
+                        if "context_summary" in context_data:
+                            actual_message = context_data["context_summary"]
+                            logger.info(f"context_summary 추출 성공: {actual_message[:50]}...")
+                        else:
+                            logger.warning("context_info에 context_summary 필드가 없습니다.")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"context_info JSON 파싱 실패: {str(e)}, 원본 메시지 사용")
+                    except Exception as e:
+                        logger.warning(f"context_info 처리 중 오류: {str(e)}, 원본 메시지 사용")
+            except Exception as e:
+                logger.warning(f"메시지 파싱 중 예상치 못한 오류: {str(e)}")
             
             # 시스템 관련 질문인지 확인 (가장 먼저 체크)
-            if is_system_query(message):
+            if is_system_query(actual_message):
                 logger.info("시스템 관련 질문 감지, 보안 응답 제공")
                 # 시스템 보안 응답 생성
                 prompt = ChatPromptTemplate.from_messages([
                     ("system", SYSTEM_QUERY_RESPONSE),
-                    ("human", message)
+                    ("human", actual_message)
                 ])
                 formatted_prompt = prompt.format_messages()
                 response_message = await self.unified_model.ainvoke(formatted_prompt)
@@ -103,22 +123,50 @@ class MotivationAgent(BaseAgent):
                 }
             
             # 응원 요청인지 확인
-            is_cheer = is_cheer_request(message)
+            is_cheer = is_cheer_request(actual_message)
             logger.info(f"응원 요청 확인 결과: {is_cheer}")
             
             # 사용자 목표 조회 (이메일이 제공된 경우)
             user_goals = []
             if email:
                 logger.info(f"사용자 목표 조회 시작: {email}")
-                user_goals = DBConnectionTool.get_user_goals(email)
-                logger.info(f"사용자 목표 조회 결과: {user_goals}")
+                try:
+                    user_goals = DBConnectionTool.get_user_goals(email)
+                    logger.info(f"사용자 목표 조회 결과: {user_goals}")
+                except Exception as e:
+                    logger.warning(f"사용자 목표 조회 중 오류: {str(e)}")
             
             # 한글 목표로 변환
-            korean_goals = [DBConnectionTool.translate_goal_to_korean(goal) for goal in user_goals]
+            korean_goals = []
+            try:
+                korean_goals = [DBConnectionTool.translate_goal_to_korean(goal) for goal in user_goals]
+            except Exception as e:
+                logger.warning(f"목표 한글 변환 중 오류: {str(e)}")
             
-            # 먼저 감정 분석을 수행
+            # 감정 데이터 초기화 (기본값 설정)
+            emotion_data = {"emotion": "neutral", "intensity": 0.5}
+            
+            # 감정 분석 수행
             logger.info("사용자 메시지 감정 분석 시작")
-            emotion_data = EmotionDetectionTool.analyze_emotion(message)
+            try:
+                # 먼저 context_data에서 감정 정보 추출 시도
+                if context_data and "emotion" in context_data:
+                    emotion = context_data.get("emotion", "neutral")
+                    # 유효한 감정인지 확인
+                    if emotion in ["happy", "sad", "angry", "anxious", "frustrated", "motivated", "tired", "neutral"]:
+                        emotion_data["emotion"] = emotion
+                        intensity = context_data.get("intensity", 0.5)
+                        # 강도값이 숫자형인지 확인
+                        if isinstance(intensity, (int, float)) and 0 <= intensity <= 1:
+                            emotion_data["intensity"] = intensity
+                        logger.info(f"context_data에서 감정 정보 추출: {emotion_data}")
+                else:
+                    # context_data에 감정 정보가 없으면 분석 수행
+                    emotion_data = EmotionDetectionTool.analyze_emotion(actual_message)
+            except Exception as e:
+                logger.error(f"감정 분석 중 오류: {str(e)}")
+                # 기본 감정 데이터 유지
+            
             logger.info(f"감정 분석 결과: 감정={emotion_data['emotion']}, 강도={emotion_data['intensity']}")
             
             # 응원 요청이면 응원 프롬프트 사용
@@ -126,7 +174,7 @@ class MotivationAgent(BaseAgent):
                 logger.info("응원 요청 감지, 응원 프롬프트 사용")
                 prompt = ChatPromptTemplate.from_messages([
                     ("system", CHEER_PROMPT),
-                    ("human", f"사용자 감정: {emotion_data['emotion']} (강도: {emotion_data['intensity']})\n\n사용자 메시지: {message}")
+                    ("human", f"사용자 감정: {emotion_data['emotion']} (강도: {emotion_data['intensity']})\n\n사용자 메시지: {actual_message}")
                 ])
             else:
                 # 목표가 있는 경우 목표가 포함된 프롬프트 템플릿 사용, 그렇지 않으면 기본 프롬프트 사용
@@ -138,7 +186,7 @@ class MotivationAgent(BaseAgent):
                 # 프롬프트 템플릿 생성
                 prompt = ChatPromptTemplate.from_messages([
                     ("system", prompt_template),
-                    ("human", f"사용자 감정: {emotion_data['emotion']} (강도: {emotion_data['intensity']})\n\n사용자 메시지: {message}")
+                    ("human", f"사용자 감정: {emotion_data['emotion']} (강도: {emotion_data['intensity']})\n\n사용자 메시지: {actual_message}")
                 ])
             
             # 프롬프트 포맷팅
@@ -170,6 +218,7 @@ class MotivationAgent(BaseAgent):
         except Exception as e:
             # 예외 처리 - 에러가 발생하면 기본 응답 반환
             logger.error(f"동기부여 에이전트 처리 중 오류: {str(e)}")
+            logger.error(traceback.format_exc())
             return self._create_fallback_response(message)
 
     def _extract_strategy(self, text: str) -> str:
