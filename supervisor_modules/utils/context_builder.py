@@ -22,7 +22,7 @@ __all__ = ['build_agent_context', 'format_context_for_agent']
 @traceable(run_type="chain", name="에이전트 문맥 정보 빌더")
 async def build_agent_context(
     message: str,
-    chat_history: List[Dict[str, Any]],
+    chat_history: List[Dict[str, Any]] = None,
     request_id: str = None,
 ) -> str:
     """
@@ -39,6 +39,9 @@ async def build_agent_context(
     start_time = time.time()
     if not request_id:
         request_id = str(time.time())
+    
+    if chat_history is None:
+        chat_history = []
     
     logger.info(f"[{request_id}] [build_agent_context] 문맥 정보 생성 시작")
 
@@ -69,7 +72,7 @@ async def build_agent_context(
         # 원본 응답 로깅 (debug 레벨로만 기록)
         logger.debug(f"[{request_id}] [build_agent_context] 전체 응답: {raw}")
 
-        # ```json 코드블록 제거
+        # JSON 파싱 전처리
         json_text = raw
         if "```json" in raw:
             json_text = raw.split("```json")[1].split("```")[0].strip()
@@ -84,16 +87,17 @@ async def build_agent_context(
             # 최종 파싱된 데이터 로깅 (debug 레벨로만 기록)
             logger.debug(f"[{request_id}] [build_agent_context] 생성된 문맥: {context_data}")
 
-            # context_summary 출력
-            if "context_summary" in context_data:
-                print(f"\n📝 문맥 요약: {context_data['context_summary'][:200]}...\n")
+            # 특수문자나 포맷 지시자를 포함할 수 있는 문자열을 안전하게 처리
+            if isinstance(context_data, dict) and "context_summary" in context_data:
+                context_data["context_summary"] = str(context_data["context_summary"])
 
             # 최종 JSON 문자열로 반환
             return json.dumps(context_data, ensure_ascii=False)
         except json.JSONDecodeError:
             # JSON 파싱 실패 시, 기본 형식으로 래핑
             logger.warning(f"[{request_id}] [build_agent_context] JSON 파싱 실패, 기본 형식으로 변환")
-            sanitized_text = raw.replace('"', '\'')  # 따옴표 충돌 방지
+            # 모든 특수 포맷 문자 이스케이프 처리
+            sanitized_text = raw.replace('"', '\'')
             context_data = {"context_summary": sanitized_text}
             return json.dumps(context_data, ensure_ascii=False)
 

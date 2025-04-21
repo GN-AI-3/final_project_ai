@@ -1,9 +1,13 @@
 from langchain.tools import tool
 from dotenv import load_dotenv
 import requests
+import os
 from ..models.input_models import ExerciseRecordInput
 
 load_dotenv()
+
+# 환경 변수에서 백엔드 URL 가져오기 - 모듈 상단에 한 번만 정의
+BACKEND_URL = os.getenv("EC2_BACKEND_URL")
 
 @tool
 def save_exercise_record(input: ExerciseRecordInput) -> str:
@@ -20,8 +24,8 @@ def save_exercise_record(input: ExerciseRecordInput) -> str:
     Returns:
     - 저장 성공 여부 메시지
     """
-
-    url = "https://localhost:8081/api/exercise_records/save_exercise_record"
+    url = f"{BACKEND_URL}/api/exercise_records/save_exercise_record"
+    
     headers = {
         "Content-Type": "application/json"
     }
