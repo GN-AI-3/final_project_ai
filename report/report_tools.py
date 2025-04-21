@@ -29,15 +29,11 @@ def select_workout_log(pt_contract_id: int) -> str:
     
     params = (pt_contract_id,)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows
 
 def select_pt_log(pt_contract_id: int) -> str:
     """
@@ -69,15 +65,11 @@ def select_pt_log(pt_contract_id: int) -> str:
     
     params = (pt_contract_id,)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows
 
 def process_pt_log_result(rows):
     result = []
@@ -117,15 +109,11 @@ def select_inbody_data(pt_contract_id: int) -> str:
 
     params = (pt_contract_id,)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows
 
 def process_inbody_data(rows):
     result = []
