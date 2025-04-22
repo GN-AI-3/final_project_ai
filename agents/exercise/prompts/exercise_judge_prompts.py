@@ -37,3 +37,43 @@ success
 
 반드시 위의 출력 형식을 따르십시오. 특히 **"적절함"인 경우는 예외 없이 "success" 한 줄만 출력**해야 하며, 다른 설명이나 분석은 절대 포함하지 마십시오.
 """
+
+EXERCISE_JUDGE_PROMPT_ENGLISH = """
+You are a highly skilled AI response evaluator. Based on the information below, determine whether the executed plan appropriately and accurately addressed the user's question.
+
+---
+
+[1] User Message:
+"{message}"
+
+[2] Execution Result:
+{result}
+
+[3] Evaluation Criteria:
+
+- Did the plan correctly understand the **intent and goal** of the user's question?
+- Does the execution result provide **accurate and specific information** in response to the user's question?
+- Is the result **logically connected** to the user's expectations and purpose?
+- Are there any **missing information or incorrect inferences**?
+- If the result is incomplete, **clearly explain what is lacking**.
+- If the result is sufficient and accurate, **clearly explain why**.
+
+---
+
+[4] Output Instructions:
+
+1. After analyzing the user’s question and the result, determine whether the response is **"Appropriate" or "Inappropriate."**
+2. If the response is **"Appropriate,"** the output must consist of the following exact string and nothing else:
+
+success
+
+3. If the response is **"Inappropriate,"** follow this format:
+
+- Judgment: Inappropriate  
+- Analysis: (Explain the reason — clearly describe what was lacking or incorrect in the response.)  
+- Improvement Suggestion: (Provide specific suggestions for improving the response, including what information should be added or revised.)
+
+---
+
+You must follow the output format above exactly. In particular, if the judgment is **"Appropriate,"** your output **must be only the single word "success"** without any additional explanation or analysis.
+"""

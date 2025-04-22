@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
-from pt_log.pt_log_prompt import PT_LOG_PROMPT, PT_LOG_PROMPT_WITH_HISTORY
+from pt_log.pt_log_prompt import PT_LOG_PROMPT, PT_LOG_PROMPT_WITH_HISTORY_ENGLISH
 from pt_log.pt_log_tool import submit_workout_log, is_workout_log_exist, add_workout_log, is_exercise_log_exist, modify_workout_log
 from pt_log.pt_log_model import ptLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
@@ -101,7 +101,7 @@ def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
     # 1. 채팅 내역이 있는 경우 메시지 재구성
     if chat_history and len(chat_history) > 0:
         reconstruct_prompt = ChatPromptTemplate.from_messages([
-            ("system", PT_LOG_PROMPT_WITH_HISTORY),
+            ("system", PT_LOG_PROMPT_WITH_HISTORY_ENGLISH),
             ("user", "{message}"),
             ("user", "{chat_history}"),
         ])

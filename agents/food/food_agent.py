@@ -30,8 +30,9 @@ class FoodAgent(BaseModel):
             self.model = model
             
     async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-            # 이메일을 사용해 사용자 ID 결정 (테스트를 위해 임시로 3으로 하드코딩)
-            user_id = 3
+            # 사용자 ID 설정
+            user_id = int(email) if email else 4
+
             if email:
                 logger.info(f"이메일로 사용자 조회(미구현): {email}")
                 # 실제 이메일->ID 변환 코드 필요
