@@ -48,7 +48,7 @@ async def build_agent_context(
     # 최근 대화 6개만 사용
     formatted_history = "\n".join(
         f"{'사용자' if m.get('role') == 'user' else 'AI'}: {m.get('content', '')}"
-        for m in chat_history[-6:]
+        for m in chat_history[-8:]
     )
 
     # 프롬프트 조합
