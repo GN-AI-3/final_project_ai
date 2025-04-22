@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
-from pt_log.pt_log_prompt import PT_LOG_PROMPT, PT_LOG_PROMPT_WITH_HISTORY
+from pt_log.pt_log_prompt import PT_LOG_PROMPT, PT_LOG_PROMPT_WITH_HISTORY_ENGLISH
 from pt_log.pt_log_tool import submit_workout_log, is_workout_log_exist, add_workout_log, is_exercise_log_exist, modify_workout_log
 from pt_log.pt_log_model import ptLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
@@ -19,7 +19,7 @@ tools = [
             "- feedback (세션 전체에 대한 소감)\n"
             "- injuryCheck (부상 유무: True/False)\n"
             "- nextPlan (다음 세션 요청사항)\n"
-            "- exercises (각 운동의 세트 수, 반복 횟수, 무게, 휴식 시간, 피드백 포함한 리스트) - 반드시 운동 이름을 검색하여 exercise_id를 조회해야 한다. exercise_id는 무조건 숫자로 올 수 있다."
+            "- exercises (각 운동의 세트 수, 반복 횟수, 무게, 휴식 시간, 피드백 포함한 리스트) - 반드시 운동 이름을 검색하여 exerciseId를 조회해야 한다. exerciseId는 무조건 숫자로 올 수 있다."
         )
     ),
     Tool(
@@ -41,7 +41,7 @@ tools = [
         func=add_workout_log,
         description=(
             "PT 세션 중 사용자가 수행한 개별 운동을 서버에 추가 저장하는 기능이다. "
-            "사용자의 메시지를 기반으로 다음 JSON 형식으로 정보를 추출해서 호출해야 한다:\n\n"
+            "사용자의 메시지를 기반으로 다음 dto 형식으로 정보를 추출해서 호출해야 한다:\n\n"
             "{\n"
             '    "ptLogId": 101,              // 필수, 현재 PT 로그 ID (숫자)\n'
             '    "exerciseId": 123,           // 필수, 운동 ID (운동 이름을 검색하여 숫자 ID로 변환해야 함)\n'
@@ -69,7 +69,7 @@ tools = [
         func=modify_workout_log,
         description=(
             "이미 존재하는 PT 로그에서 운동 기록을 수정하는 기능이다. "
-            "사용자의 메시지를 기반으로 다음 JSON 형식으로 정보를 추출해서 하나의 json 형식으로 호출해야 한다:\n\n"
+            "사용자의 메시지를 기반으로 다음 dto 형식으로 정보를 추출해서 하나의 json 형식으로 호출해야 한다:\n\n"
             "{\n"
             '    "ptLogId": 101,              // 필수, 현재 PT 로그 ID (숫자)\n'
             '    "exerciseLogId": 10,         // 필수, 수정하려는 운동 로그 ID (숫자)\n'
@@ -101,7 +101,7 @@ def pt_log_save(state: ptLogState, llm: ChatOpenAI) -> ptLogState:
     # 1. 채팅 내역이 있는 경우 메시지 재구성
     if chat_history and len(chat_history) > 0:
         reconstruct_prompt = ChatPromptTemplate.from_messages([
-            ("system", PT_LOG_PROMPT_WITH_HISTORY),
+            ("system", PT_LOG_PROMPT_WITH_HISTORY_ENGLISH),
             ("user", "{message}"),
             ("user", "{chat_history}"),
         ])

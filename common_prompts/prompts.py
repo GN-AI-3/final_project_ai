@@ -12,7 +12,7 @@ AGENT_CONTEXT_PROMPT = """당신은 전문 AI 피트니스 코치입니다. 이�
 문맥 정보:
 {context_info}
 
-사용자의 새 질문: {message}
+사용자의 새 질문: {user_message}
 
 답변 시 이전 대화의 맥락을 고려하여 일관되고 개인화된 답변을 제공하세요. 문맥 정보는 자연스럽게 활용하고, 직접적으로 언급하지 마세요."""
 
@@ -31,7 +31,7 @@ QDRANT_INSIGHTS_PROMPT = """당신은 전문 AI 피트니스 코치입니다. �
 이전 대화 내역:
 {chat_history}
 
-사용자의 현재 질문: {message}
+사용자의 현재 질문: {user_message}
 
 위 정보를 활용하여 사용자의 성향, 목표, 선호도를 고려한 개인화된 답변을 제공하세요. 인사이트 정보는 자연스럽게 활용하고, 데이터를 직접적으로 언급하지 마세요."""
 
@@ -44,7 +44,7 @@ QDRANT_SEARCH_PROMPT = """당신은 전문 AI 피트니스 코치입니다. 사�
 이전 대화 내역:
 {chat_history}
 
-사용자의 현재 질문: {message}
+사용자의 현재 질문: {user_message}
 
 에이전트 기본 응답:
 {agent_response}
@@ -63,7 +63,7 @@ CATEGORY_ROUTING_PROMPT = """
 
 **입력**  
 - context_info: 최근 대화·성향 등이 담긴 JSON 문자열입니다.
-  - 대개 {{"context_summary": "..."}} 형태이니, 먼저 context_summary 값을 뽑아 쓰세요.
+  - 대개 {{{{\"context_summary\": \"...\"}}}} 형태이니, 먼저 context_summary 값을 뽑아 쓰세요.
 - message: 사용자의 현재 메시지입니다.
 
 **출력 규칙**  
@@ -72,7 +72,7 @@ CATEGORY_ROUTING_PROMPT = """
 3. 배열 닫는 `]` 뒤에는 어떤 텍스트도 쓰지 마세요.  
 
 **판정 순서**
-1. context_summary와 message를 한 문단으로 합쳐 핵심 주제를 파악  
+1. `{{context_summary}}`와 `message`를 한 문단으로 합쳐 핵심 주제를 파악  
 2. 아래 매핑 규칙에 따라 가장 적합한 카테고리 1~2개 선정  
    - exercise : 운동, 스트레칭, 헬스, 루틴, 근육, 자세, 통증‑완화 스트레칭  
    - food   : 식단, 칼로리, 영양, 음식, 탄단지, 레시피, 식사 기록  
@@ -80,11 +80,9 @@ CATEGORY_ROUTING_PROMPT = """
    - motivation: 동기부여, 칭찬, 격려, 목표 달성 의지, 멘탈 관리  
    - general  : 단순 정보·날짜·시간 문의, 모호하거나 기타 주제  
 3. 숫자 참조("2번", "세 번째")가 있으면,
-   context_summary 속 항목을 확인해 가장 가까운 카테고리에 매핑  
-4. 선택이 애매할 경우:
-   - context_summary 안에 "예약", "일정", "PT", "취소"와 같은 표현이 있으면 **무조건 "schedule" 포함**  
-   - 그 외의 경우에는 context_summary의 주제를 우선 고려하고  
-   - 그래도 모호하면 "general" 선택
+   {{context_summary}} 속 항목을 확인해 가장 가까운 카테고리에 매핑  
+4. 선택이 애매할 때는 **{{context_summary}}의 주제를 우선**하고,
+   그래도 모호하면 "general" 선택
 
 예시(출력 형식):
 ["general"]
@@ -109,7 +107,7 @@ AGENT_CONTEXT_BUILDING_PROMPT = """
 1. chat_history에서 User 역할만 고려, Assistant/System 무시
 2. 1차: message로 핵심 주제·의도 파악
 3. 2차: chat_history 활용
-   3‑a. message가 **숫자 참조·대명사(‘그 일정’ 등)·동일 주제**로
+   3‑a. message가 **숫자 참조·대명사('그 일정' 등)·동일 주제**로
         과거 발화를 명확히 가리킬 때만 연관 정보를 가져옴
    3‑b. 위 조건이 없으면 **과거 내용은 무시**(message 기반 요약만 작성)
    3‑c. 숫자 참조("2번", "세 번째")가 있으면 실제 항목 복원
@@ -118,13 +116,13 @@ AGENT_CONTEXT_BUILDING_PROMPT = """
         예: “4월 18일 오후 8시 예약을 허리 통증으로 인해 취소 요청함”
 4. 입력에 없는 정보·추측·질문 추가 ❌절대 금지❌
 5. 직접적인 설명·추천 ❌금지❌ (요청까지만)
-6. 메타 코멘트(“정보 없음” 등) ❌금지❌
+6. 메타 코멘트("정보 없음" 등) ❌금지❌
 7. 여러 주제면 message 기준 가장 중요한 1‑2개만
 8. 60자 이내, 마침표로 종료
 9. ✅ 주어 생략: `"사용자는"` 같은 표현 없이 핵심 내용만 요약
 
 출력 예시 형식  
-{{"context_summary":"여기에 요약을 작성"}}
+{{{{\"context_summary\":\"여기에 요약을 작성\"}}}}
 
 ──────────────────────────
 입력

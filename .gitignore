@@ -65,3 +65,5 @@ firebase-service-account-key.json
 .env.production.local
 
 agents/food/food_data/
+agents/food/elasticsearch/rag/recipes/
+agents/food/elasticsearch/rag/recipes/ 

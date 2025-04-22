@@ -249,44 +249,59 @@ class EmotionDetectionTool:
             return {"emotion": "neutral", "intensity": 0.0}
     
     @staticmethod
-    def process_response(tool_call: Any, message: Optional[str] = None) -> Dict[str, Any]:
+    def process_response(tool_call=None, message=None):
         """
-        도구 호출 응답을 처리합니다.
-        tool_call이 None이거나 처리할 수 없는 경우 message 파라미터가 제공되면 LLM으로 직접 분석합니다.
+        도구 호출 응답과 필요시 메시지를 직접 분석하여 감정 데이터를 반환합니다.
         
         Args:
-            tool_call: 도구 호출 응답
-            message: 사용자 메시지 (직접 분석용)
+            tool_call: 감정 분석 도구 호출 응답
+            message: 직접 분석할 메시지 (도구 호출 실패시)
             
         Returns:
-            Dict[str, Any]: 처리된 감정 데이터
+            emotion_data: {'emotion': str, 'intensity': float} 형식의 감정 데이터
         """
-        emotion_data = {"emotion": "neutral", "intensity": 0.0}
+        logger.info("감정 분석 응답 처리 시작")
+        
+        # 기본값 설정 - 중립 감정, 0 강도
+        emotion_data = {"emotion": "neutral", "intensity": 0}
         
         try:
-            # tool_call 처리 시도
-            if tool_call and hasattr(tool_call, 'function') and tool_call.function.name == "detect_emotion":
-                function_args = json.loads(tool_call.function.arguments)
-                
-                # 1차 검증: EmotionValidationTool 사용
-                emotion_data = EmotionValidationTool.clean_result(function_args)
-                
-                # 메시지가 있으면 2차 검증 진행
-                if message:
-                    emotion_data = EmotionDetectionTool.validate_emotion(emotion_data, message)
+            # 우선 도구 호출 검증
+            if tool_call and isinstance(tool_call, dict):
+                # arguments가 문자열이면 JSON으로 파싱
+                if isinstance(tool_call.get("arguments"), str):
+                    try:
+                        args = json.loads(tool_call["arguments"])
+                        if isinstance(args, dict) and "emotion" in args and "intensity" in args:
+                            emotion_data = {
+                                "emotion": args["emotion"],
+                                "intensity": float(args["intensity"])
+                            }
+                    except json.JSONDecodeError:
+                        logger.warning("도구 호출 인자 JSON 파싱 실패")
+                        
+                # arguments가 이미 딕셔너리인 경우
+                elif isinstance(tool_call.get("arguments"), dict):
+                    args = tool_call["arguments"]
+                    if "emotion" in args and "intensity" in args:
+                        emotion_data = {
+                            "emotion": args["emotion"],
+                            "intensity": float(args["intensity"])
+                        }
+            
+            # 메시지 직접 분석 (필요한 경우)
+            if message and (not emotion_data or emotion_data["emotion"] == "neutral"):
+                logger.info("메시지 직접 감정 분석 시도")
+                analysis_result = EmotionDetectionTool.analyze_emotion(message)
+                if analysis_result and isinstance(analysis_result, dict):
+                    emotion_data = analysis_result
                     
-                logger.info(f"도구 호출로부터 감정 분석 결과: 감정={emotion_data['emotion']}, 강도={emotion_data['intensity']}")
-                return emotion_data
-                
-            # 직접 분석이 필요한 경우
-            if message:
-                emotion_data = EmotionDetectionTool.analyze_emotion(message)
-                logger.info(f"LLM으로 직접 감정 분석 결과: 감정={emotion_data['emotion']}, 강도={emotion_data['intensity']}")
-                
-        except (json.JSONDecodeError, AttributeError) as e:
-            logger.error(f"감정 분석 도구 응답 처리 중 오류: {str(e)}")
-            # 메시지가 제공된 경우 직접 분석 시도
-            if message:
-                emotion_data = EmotionDetectionTool.analyze_emotion(message)
-                
-        return emotion_data
+            # 최종 감정 데이터 검증
+            emotion_data = EmotionValidationTool.validate_emotion(emotion_data)
+            logger.info(f"처리된 감정 데이터: {emotion_data}")
+            return emotion_data
+            
+        except (KeyError, ValueError, AttributeError, json.JSONDecodeError) as e:
+            logger.error(f"감정 분석 응답 처리 오류: {str(e)}")
+            # 오류 시 기본 감정 데이터 반환
+            return {"emotion": "neutral", "intensity": 0}

@@ -11,12 +11,12 @@ from langchain.agents import tool
 from ..utils.date_utils import validate_date_format
 from ..core.database import execute_query
 
-# API 기본 URL 설정
-API_BASE_URL = "http://localhost:8081/api"
+# API 기본 URL 설정 - 환경 변수 사용
+API_BASE_URL = os.getenv("EC2_BACKEND_URL") + "/api"
 # 인증 토큰 설정
 AUTH_TOKEN = os.getenv(
     "AUTH_TOKEN",
-    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoi7J6l6re87JqwIiwiaWQiOjQsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJ1c2VyMUB0ZXN0LmNvbSIsImdvYWxzIjpbIldFSUdIVF9MT1NTIl0sImlhdCI6MTc0NDc4NjAxNiwiZXhwIjoxNzQ1MTQ2MDE2fQ.K0hNJEV0TLj0qYdFGpP0KeowQHmZ7kWwzxN_c8gMekjVbb1KnvMiJ0YHhsHLYG49"
+    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsInBob25lIjoiMDEwLTExMTEtMjIyMiIsIm5hbWUiOiLsnqXqt7zsmrAiLCJpZCI6NCwidXNlclR5cGUiOiJNRU1CRVIiLCJlbWFpbCI6InVzZXIxQHRlc3QuY29tIiwiZ29hbHMiOlsiV0VJR0hUX0xPU1MiXSwiaWF0IjoxNzQ1MDUyMzE5LCJleHAiOjM2MzcyMTIzMTl9._Y1TZGQOGPZDLB4YdYX-21TN1bv_aYBuxX9N_EvY6y_QADh2hLJDEyUKIIGXuc4i"
 )
 
 def get_pt_contract_id_from_token(token: str) -> int:

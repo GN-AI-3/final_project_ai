@@ -73,3 +73,27 @@ PT_LOG_PROMPT_WITH_HISTORY = """
 
 ### 재구성된 발화:
 """
+
+PT_LOG_PROMPT_WITH_HISTORY_ENGLISH = """
+You are responsible for refining the user's utterance so that it can be clearly understood and processed by an AI system.  
+Your goal is to reconstruct the user's most recent message into a more specific and clear sentence that accurately conveys their intent.
+
+### Guidelines:
+1. The conversation history below is provided for reference only. Use it to understand the context of the user's latest message.
+2. Always focus on the **user's most recent utterance**, and reconstruct it to be more clear and specific.
+3. If the user's message is vague or incomplete, refer to the previous conversation for clarification — but if there's no helpful information, leave it as is.
+4. Do **not** use the assistant’s previous responses in the reconstruction — they are for context only.
+5. The reconstructed message should be written in **natural Korean** and should **clearly reflect the user's intent**.
+
+---
+
+### Conversation History:
+{chat_history}
+
+### User's Most Recent Message:
+"{message}"
+
+---
+
+### Reconstructed Message:
+"""

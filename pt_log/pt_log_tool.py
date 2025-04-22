@@ -7,6 +7,9 @@ import traceback
 
 load_dotenv()
 
+# 환경 변수에서 백엔드 URL 가져오기 - 모듈 상단에 한 번만 정의
+BACKEND_URL = os.getenv("EC2_BACKEND_URL")
+
 DB_CONFIG = {
     "dbname": os.getenv("DB_DB"),
     "user": os.getenv("DB_USER"),
@@ -27,9 +30,10 @@ def submit_workout_log(data: dict | str) -> str:
         except json.JSONDecodeError as e:
             return f"JSON 디코딩 오류: {str(e)}"
 
-    url = "http://localhost:8081/api/pt_logs"
+    url = f"{BACKEND_URL}/api/pt_logs"
+    
     headers = {
-        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsImNhcmVlciI6Iu2XrOyKpO2KuOugiOydtOuEiCAxMOuFhCIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoidHJhaW5lcjEiLCJpZCI6MSwidXNlclR5cGUiOiJUUkFJTkVSIiwiY2VydGlmaWNhdGlvbnMiOlsi7IOd7Zmc7Iqk7Y-s7Lig7KeA64-E7IKsIDLquIkiLCLqsbTqsJXsmrTrj5nqtIDrpqzsgqwiXSwiZW1haWwiOiJ0cmFpbmVyQGV4YW1wbGUuY29tIiwic3BlY2lhbGl0aWVzIjpbIuyytOykkeqwkOufiSIsIuq3vOugpeqwle2ZlCIsIuyekOyEuOq1kOyglSJdLCJpYXQiOjE3NDQ3Njk0ODMsImV4cCI6MTc0NTEyOTQ4M30.ci8oWjdExXLY9EgG61sSeMmZQ4ik0nVdvKiz06TRypCSUj-pX48GDNnRL4gnseq3",
+        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsImNhcmVlciI6Iu2XrOyKpO2KuOugiOydtOuEiCAxMOuFhCIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoidHJhaW5lcjEiLCJpZCI6MSwidXNlclR5cGUiOiJUUkFJTkVSIiwiY2VydGlmaWNhdGlvbnMiOlsi7IOd7Zmc7Iqk7Y-s7Lig7KeA64-E7IKsIDLquIkiLCLqsbTqsJXsmrTrj5nqtIDrpqzsgqwiXSwiZW1haWwiOiJ0cmFpbmVyQGV4YW1wbGUuY29tIiwic3BlY2lhbGl0aWVzIjpbIuyytOykkeqwkOufiSIsIuq3vOugpeqwle2ZlCIsIuyekOyEuOq1kOyglSJdLCJpYXQiOjE3NDUxMzQ2MTMsImV4cCI6MzYzNzI5NDYxM30.O8fEatYrNXcyD6Jdg7lKfiGcELvgTN_-PSIGAJj3DErfXuM1SwxtnKMv9rjp9dNx",
         "Content-Type": "application/json"
     }
 
@@ -52,15 +56,11 @@ def is_workout_log_exist(ptScheduleId: int) -> str:
 
     params = (ptScheduleId,)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows[0][0] if rows else None
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows[0][0] if rows else None
 
 def add_workout_log(data: dict | str) -> str:
     """
@@ -72,9 +72,10 @@ def add_workout_log(data: dict | str) -> str:
         except json.JSONDecodeError as e:
             return f"JSON 디코딩 오류: {str(e)}"
         
-    url = f"http://localhost:8081/api/pt_logs/{data.get('ptLogId')}/exercises"
+    url = f"{BACKEND_URL}/api/pt_logs/{data.get('ptLogId')}/exercises"
+    
     headers = {
-        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsImNhcmVlciI6Iu2XrOyKpO2KuOugiOydtOuEiCAxMOuFhCIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoidHJhaW5lcjEiLCJpZCI6MSwidXNlclR5cGUiOiJUUkFJTkVSIiwiY2VydGlmaWNhdGlvbnMiOlsi7IOd7Zmc7Iqk7Y-s7Lig7KeA64-E7IKsIDLquIkiLCLqsbTqsJXsmrTrj5nqtIDrpqzsgqwiXSwiZW1haWwiOiJ0cmFpbmVyQGV4YW1wbGUuY29tIiwic3BlY2lhbGl0aWVzIjpbIuyytOykkeqwkOufiSIsIuq3vOugpeqwle2ZlCIsIuyekOyEuOq1kOyglSJdLCJpYXQiOjE3NDQ3Njk0ODMsImV4cCI6MTc0NTEyOTQ4M30.ci8oWjdExXLY9EgG61sSeMmZQ4ik0nVdvKiz06TRypCSUj-pX48GDNnRL4gnseq3",
+        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsImNhcmVlciI6Iu2XrOyKpO2KuOugiOydtOuEiCAxMOuFhCIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoidHJhaW5lcjEiLCJpZCI6MSwidXNlclR5cGUiOiJUUkFJTkVSIiwiY2VydGlmaWNhdGlvbnMiOlsi7IOd7Zmc7Iqk7Y-s7Lig7KeA64-E7IKsIDLquIkiLCLqsbTqsJXsmrTrj5nqtIDrpqzsgqwiXSwiZW1haWwiOiJ0cmFpbmVyQGV4YW1wbGUuY29tIiwic3BlY2lhbGl0aWVzIjpbIuyytOykkeqwkOufiSIsIuq3vOugpeqwle2ZlCIsIuyekOyEuOq1kOyglSJdLCJpYXQiOjE3NDUxMzQ2MTMsImV4cCI6MzYzNzI5NDYxM30.O8fEatYrNXcyD6Jdg7lKfiGcELvgTN_-PSIGAJj3DErfXuM1SwxtnKMv9rjp9dNx",
         "Content-Type": "application/json"
     }
 
@@ -110,15 +111,11 @@ def is_exercise_log_exist(data: dict | str) -> str:
 
     params = (ptLogId, exerciseId)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows[0][0] if rows else None
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows[0][0] if rows else None
 
 def modify_workout_log(data: dict | str) -> str:
     """
@@ -130,9 +127,10 @@ def modify_workout_log(data: dict | str) -> str:
         except json.JSONDecodeError as e:
             return f"JSON 디코딩 오류: {str(e)}"
 
-    url = f"http://localhost:8081/api/pt_logs/{data.get('ptLogId')}/exercises/{data.get('exerciseLogId')}"
+    url = f"{BACKEND_URL}/api/pt_logs/{data.get('ptLogId')}/exercises/{data.get('exerciseLogId')}"
+    
     headers = {
-        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsImNhcmVlciI6Iu2XrOyKpO2KuOugiOydtOuEiCAxMOuFhCIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoidHJhaW5lcjEiLCJpZCI6MSwidXNlclR5cGUiOiJUUkFJTkVSIiwiY2VydGlmaWNhdGlvbnMiOlsi7IOd7Zmc7Iqk7Y-s7Lig7KeA64-E7IKsIDLquIkiLCLqsbTqsJXsmrTrj5nqtIDrpqzsgqwiXSwiZW1haWwiOiJ0cmFpbmVyQGV4YW1wbGUuY29tIiwic3BlY2lhbGl0aWVzIjpbIuyytOykkeqwkOufiSIsIuq3vOugpeqwle2ZlCIsIuyekOyEuOq1kOyglSJdLCJpYXQiOjE3NDQ3Njk0ODMsImV4cCI6MTc0NTEyOTQ4M30.ci8oWjdExXLY9EgG61sSeMmZQ4ik0nVdvKiz06TRypCSUj-pX48GDNnRL4gnseq3",
+        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsImNhcmVlciI6Iu2XrOyKpO2KuOugiOydtOuEiCAxMOuFhCIsInBob25lIjoiMDEwMTExMTIyMjIiLCJuYW1lIjoidHJhaW5lcjEiLCJpZCI6MSwidXNlclR5cGUiOiJUUkFJTkVSIiwiY2VydGlmaWNhdGlvbnMiOlsi7IOd7Zmc7Iqk7Y-s7Lig7KeA64-E7IKsIDLquIkiLCLqsbTqsJXsmrTrj5nqtIDrpqzsgqwiXSwiZW1haWwiOiJ0cmFpbmVyQGV4YW1wbGUuY29tIiwic3BlY2lhbGl0aWVzIjpbIuyytOykkeqwkOufiSIsIuq3vOugpeqwle2ZlCIsIuyekOyEuOq1kOyglSJdLCJpYXQiOjE3NDUxMzQ2MTMsImV4cCI6MzYzNzI5NDYxM30.O8fEatYrNXcyD6Jdg7lKfiGcELvgTN_-PSIGAJj3DErfXuM1SwxtnKMv9rjp9dNx",
         "Content-Type": "application/json"
     }
 

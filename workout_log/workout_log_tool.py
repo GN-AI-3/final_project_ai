@@ -7,6 +7,9 @@ import traceback
 
 load_dotenv()
 
+# 환경 변수에서 백엔드 URL 가져오기 - 모듈 상단에 한 번만 정의
+BACKEND_URL = os.getenv("EC2_BACKEND_URL")
+
 DB_CONFIG = {
     "dbname": os.getenv("DB_DB"),
     "user": os.getenv("DB_USER"),
@@ -41,15 +44,11 @@ def is_workout_log_exist(data: dict | str) -> str:
 
     params = (memberId, exerciseId, date)
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return rows[0][0] if rows else None
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows[0][0] if rows else None
 
 def add_workout_log(data: dict | str) -> str:
     """
@@ -61,7 +60,8 @@ def add_workout_log(data: dict | str) -> str:
         except json.JSONDecodeError as e:
             return f"JSON 디코딩 오류: {str(e)}"
         
-    url = f"http://localhost:8081/api/exercise_records/save_exercise_record"
+    url = f"{BACKEND_URL}/api/exercise_records"
+    
     headers = {
         "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCQ4UW5XSWNwYmJNV1FuOEt4OTRSRndPLzl3WW8yNnN0eG50ZDR2bjNCRDBiYmgzUnNXcUVaYSIsInBob25lIjoiMDEwLTMzMzMtMzMzMyIsIm5hbWUiOiLquYDsp4Dtm4giLCJpZCI6MTYsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJqaWh1bkBnbWFpbC5jb20iLCJnb2FscyI6WyJXRUlHSFRfTE9TUyIsIlNUUkVOR1RIIiwiTUVOVEFMX0hFQUxUSCIsIkhFQUxUSF9NQUlOVEVOQU5DRSIsIkJPRFlfU0hBUEUiLCJIT0JCWSJdLCJpYXQiOjE3NDQ3ODMzMzMsImV4cCI6MTc0NTE0MzMzM30.Ywg6TPBfJtJ4FTqyoEylKGcEnppaNdiKRoSrlM5F5vqqzR_cyJn1B3NtgBR7rnhp",
         "Content-Type": "application/json"
@@ -84,7 +84,8 @@ def modify_workout_log(data: dict | str) -> str:
         except json.JSONDecodeError as e:
             return f"JSON 디코딩 오류: {str(e)}"
 
-    url = f"http://localhost:8081/api/exercise_records/update"
+    url = f"{BACKEND_URL}/api/exercise_records"
+    
     headers = {
         "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCQ4UW5XSWNwYmJNV1FuOEt4OTRSRndPLzl3WW8yNnN0eG50ZDR2bjNCRDBiYmgzUnNXcUVaYSIsInBob25lIjoiMDEwLTMzMzMtMzMzMyIsIm5hbWUiOiLquYDsp4Dtm4giLCJpZCI6MTYsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJqaWh1bkBnbWFpbC5jb20iLCJnb2FscyI6WyJXRUlHSFRfTE9TUyIsIlNUUkVOR1RIIiwiTUVOVEFMX0hFQUxUSCIsIkhFQUxUSF9NQUlOVEVOQU5DRSIsIkJPRFlfU0hBUEUiLCJIT0JCWSJdLCJpYXQiOjE3NDQ3ODMzMzMsImV4cCI6MTc0NTE0MzMzM30.Ywg6TPBfJtJ4FTqyoEylKGcEnppaNdiKRoSrlM5F5vqqzR_cyJn1B3NtgBR7rnhp",
         "Content-Type": "application/json"
