@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from ..models.state_models import RoutingState
 
-from ..prompts.exercise_judge_prompts import EXERCISE_JUDGE_PROMPT
+from ..prompts.exercise_judge_prompts import EXERCISE_JUDGE_PROMPT_ENGLISH
 
 tools = []
 
@@ -14,7 +14,7 @@ def judge(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     context = state.context
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", EXERCISE_JUDGE_PROMPT),
+        ("system", EXERCISE_JUDGE_PROMPT_ENGLISH),
         ("user", "{message}"),
         ("user", "{result}"),
         ("user", "{context}"),
