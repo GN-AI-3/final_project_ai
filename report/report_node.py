@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 from report.report_model import reportState
 from langchain_core.prompts import ChatPromptTemplate
 from report.report_prompt import REPORT_EXERCISE_PROMPT, REPORT_INBODY_PROMPT, REPORT_MEAL_PROMPT
-from report.report_tools import select_pt_log, process_pt_log_result, select_workout_log, select_inbody_data, process_inbody_data, select_meal_records, process_meal_records, select_user_goal
+from report.report_tools import select_pt_log, process_pt_log_result, select_workout_log, select_inbody_data, process_inbody_data, select_meal_records, process_meal_records, select_user_goal, select_gender
 import requests
 import json
 
@@ -18,6 +18,10 @@ def analyze_pt_log(state: reportState, llm: ChatOpenAI):
 
     pt_log_data = select_pt_log(ptContractId)
     pt_log_data = process_pt_log_result(pt_log_data)
+
+    gender = select_gender(ptContractId)
+    state.gender = gender
+
     print("pt_log_data: ", pt_log_data)
 
     workout_log_data = select_workout_log(ptContractId)
@@ -26,12 +30,14 @@ def analyze_pt_log(state: reportState, llm: ChatOpenAI):
     prompt = ChatPromptTemplate.from_messages([
         ("system", REPORT_EXERCISE_PROMPT),
         ("user", "{pt_log_data}"),
-        ("user", "{workout_log_data}")
+        ("user", "{workout_log_data}"),
+        ("user", "{gender}")
     ])
 
     response = llm.invoke(prompt.format_messages(
         pt_log_data=pt_log_data,
-        workout_log_data=workout_log_data
+        workout_log_data=workout_log_data,
+        gender=gender
     ))
     print("report response: ", response.content)
     # JSON 문자열을 파싱하여 딕셔너리로 변환
@@ -67,12 +73,15 @@ def analyze_inbody_data(state: reportState, llm: ChatOpenAI):
     inbody_data = process_inbody_data(inbody_data)
     print("inbody_data: ", inbody_data)
 
+    gender = state.gender
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", REPORT_INBODY_PROMPT),
-        ("user", "{inbody_data}")
+        ("user", "{inbody_data}"),
+        ("user", "{gender}")
     ])
 
-    response = llm.invoke(prompt.format_messages(inbody_data=inbody_data))
+    response = llm.invoke(prompt.format_messages(inbody_data=inbody_data, gender=gender))
     print("inbody_report: ", response.content)
     # JSON 문자열을 파싱하여 딕셔너리로 변환
     state.inbody_report = json.loads(response.content)

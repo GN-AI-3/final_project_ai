@@ -85,6 +85,30 @@ def process_pt_log_result(rows):
         result.append(pt_log_entry)
     return result
 
+def select_gender(pt_contract_id: int) -> str:
+    """
+    member 테이블에서 성별을 조회하는 tool.
+    """
+
+    query = """
+        SELECT m.gender
+        FROM pt_contract pc
+        JOIN member m ON pc.member_id = m.id
+        WHERE pc.id = %s;
+    """
+
+    params = (pt_contract_id,)
+
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+    
+    if rows[0][0] == 'M':
+        return '남자'
+    else:
+        return '여자'
+
 def select_inbody_data(pt_contract_id: int) -> str:
     """
     inbody 테이블에서 inbody 정보를 조회하는 노드
