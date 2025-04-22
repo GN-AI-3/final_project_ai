@@ -8,7 +8,7 @@ from ..utils import PG_URI, summarize_db_schema
 from trainer_chat.prompts import SQL_PROMPT, INPUT_PARSER_PROMPT
 from datetime import datetime, timezone, timedelta
 import json
-import zoneinfo
+import pytz
 
 # 1. 상태 정의
 class SQLAgentState(TypedDict):
@@ -30,15 +30,18 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 extraction_prompt = PromptTemplate.from_template(INPUT_PARSER_PROMPT)
 
 def extract_intent_slot_output(state: SQLAgentState) -> SQLAgentState:
+
     # 한국 타임존 적용
-    try:
-        tz = zoneinfo.ZoneInfo("Asia/Seoul")
-    except Exception:
-        tz = timezone(timedelta(hours=9))  # zoneinfo 미지원 시 fallback
-    now_kst = datetime.now(tz)
+    user_timezone='Asia/Seoul'
+    now = datetime.now(pytz.timezone(user_timezone))
+    current_datetime_iso = now.isoformat()
+    schema = summarize_db_schema(db._engine, ['pt_schedule', 'pt_contract', 'member'])
+
     prompt = extraction_prompt.format(
         user_input=state['user_input'],
-        current_time=now_kst.strftime("%Y-%m-%d %H:%M:%S")
+        user_timezone=user_timezone,
+        current_datetime_iso=current_datetime_iso,
+        schema=schema
     )
     response = llm.invoke(prompt)
 
@@ -126,7 +129,7 @@ if __name__ == "__main__":
         # "오늘 수업 있는 회원 누구야?",
         # "내일 오전에 PT 있는 회원 보여줘.",
         # "이번 주 신규 회원 첫 수업 몇 건이야?",
-        "김지혜 회원의 다음 수업 언제야?"
+        "장근우 회원의 다음 수업 언제야?"
     ]
 
     for user_input in test_inputs:
