@@ -14,6 +14,8 @@ def execute_query(query: str) -> str:
     Returns:
         str: 쿼리 실행 결과 또는 에러 메시지
     """
+    print("\n📄 Executing SQL Query:\n", query)
+    print("================================================")
     try:
         result = db.run(query)
         if not result or result.strip() == "":
