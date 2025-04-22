@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
 
+# Elasticsearch 연결
+es = Elasticsearch("http://elasticsearch:9200")
 # PostgreSQL 연결 (전역 변수로 관리)
 pg_conn = None
 pg_cur = None
