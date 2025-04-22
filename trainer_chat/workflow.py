@@ -74,20 +74,16 @@ def query_gen_node(state: State):
     else:
         tool_messages = []
     return {"messages": [message] + tool_messages}
-
-def should_continue(state: State) -> Literal[END, "correct_query", "query_gen"]:
+    
+def should_continue(state: State) -> Literal["query_gen", "execute_query"]:
     messages = state["messages"]
     last_message = messages[-1]
-    if getattr(last_message, "tool_calls", None):
-        return END
     if last_message.content.startswith("Error:"):
         return "query_gen"
-    else:
-        return "correct_query"
+    return "execute_query"
 
 workflow = StateGraph(State)
 workflow.add_node("first_tool_call", first_tool_call)
-# workflow.add_node("list_tables_tool", create_tool_node_with_fallback([list_tables_tool]))
 workflow.add_node("get_schema_tool", create_tool_node_with_fallback([get_schema_tool]))
 workflow.add_node(
     "model_get_schema",
@@ -98,17 +94,29 @@ workflow.add_node(
 workflow.add_node("query_gen", query_gen_node)
 workflow.add_node("correct_query", model_check_query)
 workflow.add_node("execute_query", create_tool_node_with_fallback([db_query_tool]))
+workflow.add_node("finalize_answer", lambda state: {
+    "messages": [ChatOpenAI(model="gpt-4o", temperature=0).bind_tools(
+        [SubmitFinalAnswer],
+        tool_choice="required"
+    ).invoke(state["messages"])]
+})
+
 workflow.add_edge(START, "first_tool_call")
 workflow.add_edge("first_tool_call", "get_schema_tool")
-# workflow.add_edge("list_tables_tool", "model_get_schema")
-# workflow.add_edge("model_get_schema", "get_schema_tool")
 workflow.add_edge("get_schema_tool", "query_gen")
+workflow.add_edge("query_gen", "correct_query")
+
 workflow.add_conditional_edges(
-    "query_gen",
+    "correct_query",
     should_continue,
+    {
+        "query_gen": "query_gen",
+        "execute_query": "execute_query"
+    }
 )
-workflow.add_edge("correct_query", "execute_query")
-workflow.add_edge("execute_query", "query_gen")
+
+workflow.add_edge("execute_query", "finalize_answer")
+workflow.add_edge("finalize_answer", END)
 
 app = workflow.compile()
 

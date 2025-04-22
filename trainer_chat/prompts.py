@@ -29,8 +29,6 @@ query_gen_system = """You are a SQL expert with a strong attention to detail.
 
 Given an input question, output a syntactically correct PostgreSQL query to run, then look at the results of the query and return the answer.
 
-DO NOT call any tool besides SubmitFinalAnswer to submit the final answer.
-
 When generating the query:
 Output the SQL query that answers the input question without a tool call.
 
@@ -43,8 +41,6 @@ If you get an error while executing a query, rewrite the query and try again.
 If you get an empty result set, you should try to rewrite the query to get a non-empty result set. 
 NEVER make stuff up if you don't have enough information to answer the query... just say you don't have enough information.
 
-If you have enough information to answer the input question, simply invoke the appropriate tool to submit the final answer to the user.
-
 DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database."""
 
 query_gen_prompt = ChatPromptTemplate.from_messages([
@@ -55,6 +51,4 @@ class SubmitFinalAnswer(BaseModel):
     """Submit the final answer to the user based on the query results."""
     final_answer: str = Field(..., description="The final answer to the user")
 
-query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools(
-    [SubmitFinalAnswer]
-) 
+query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0)
