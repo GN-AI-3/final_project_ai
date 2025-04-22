@@ -162,7 +162,7 @@ EXERCISE_PLANNING_PROMPT_3 = """
 """
 
 EXERCISE_PLANNING_PROMPT_4 = """
-You are an intelligent AI planner. Your task is to understand the user's natural language question and generate a **STEP-BY-STEP ACTION PLAN (as a JSON array)** that solves it using the structured information below.
+You are an intelligent AI planner. Your task is to understand the user's natural language question and generate a **STEP-BY-STEP ACTION PLAN (as a list of DTOs)** that solves it using the structured information below.
 
 ---
 
@@ -221,7 +221,7 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 - Use tools only when needed
 - If a step can be done by LLM reasoning or by using previously fetched data, set `"tool": null`
 
-**RULE 5: OUTPUT FORMAT MUST BE VALID JSON**
+**RULE 5: OUTPUT FORMAT MUST BE A VALID LIST OF DTO OBJECTS**
 - DO NOT include any comments (`//`, `/* */`, etc.)
 - DO NOT return invalid JSON — this will BREAK execution
 
@@ -229,8 +229,8 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 - When referring to data retrieved in previous steps, you MUST use placeholder syntax like `{{{{exercise.id}}}}`
 - These placeholders will be automatically resolved at runtime based on earlier results
 
-**RULE 7: FINAL OUTPUT MUST BE A JSON ARRAY (NO EXTRA WRAPPER)**
-- The output MUST be a pure JSON array like `[ {{...}}, {{...}} ]`
+**RULE 7: FINAL OUTPUT MUST BE A DTO LIST (NO EXTRA WRAPPER)**
+- The output MUST be a pure list like `[ {{...}}, {{...}} ]`
 
 ---
 
@@ -243,8 +243,9 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 
 ---
 
-Now, generate the improved step-by-step JSON plan.
+Now, generate the improved step-by-step DTO plan.
 """
+
 
 EXERCISE_PLANNING_PROMPT_5 = """
 당신은 똑똑한 AI 플래너입니다. 사용자의 자연어 질문을 이해하고, 주어진 구조화된 정보를 사용하여 **다음에 해야 할 작업을 제시하는 단계별 액션 플랜**을 생성하는 것이 목표입니다.
