@@ -17,7 +17,6 @@ def judge(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         ("system", EXERCISE_JUDGE_PROMPT_ENGLISH),
         ("user", "{message}"),
         ("user", "{result}"),
-        ("user", "{context}"),
         MessagesPlaceholder(variable_name="agent_scratchpad")
     ])
 
@@ -33,7 +32,6 @@ def judge(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     response = agent_executor.invoke({
         "message": message,
         "result": result,
-        "context": context
     })
 
     print("exercise judge response: ", response["output"])

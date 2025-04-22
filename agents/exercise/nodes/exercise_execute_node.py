@@ -154,6 +154,7 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         f"최종 목적: 위 정보를 바탕으로 사용자가 이해하기 쉽게 정리해서 질문에 답하세요. 단, 질문과 무관한 정보는 제외해야 합니다."
     ])
     final_response = llm.invoke([HumanMessage(content=final_llm_input)])
+    print("final_response: ", final_response.content)
     final_result = final_response.content
 
     state.result = final_result
