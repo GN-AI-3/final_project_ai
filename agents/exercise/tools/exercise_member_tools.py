@@ -13,7 +13,7 @@ from qdrant_client.models import SearchParams
 
 load_dotenv()
 
-es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
+es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
 exercise_index_name = "exercises"
 
 qdrant_client = QdrantClient(
@@ -36,13 +36,21 @@ TABLE_SCHEMA = {
         "columns": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
         "description": "사용자의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다. exercise_id는 exercise 테이블의 id와 연결해 운동 이름(name)을 조회해야 합니다."
     },
-    "exercise": {
-        "columns": ["id", "name", "exercise_type"],
-        "description": "운동 목록. name은 운동명이며, exercise_type은 카테고리입니다 (예: 유산소 등)."
-    },
     "member": {
         "columns": ["id", "name", "email", "phone", "profile_image", "goal"],
         "description": "사용자 정보. goal은 사용자의 운동 목표입니다 (예: 벌크업, 체중 감량)."
+    },
+    "pt_contract": {
+        "columns": ["id","member_id", "trainer_id"],
+        "description": "PT 계약 정보, 이 테이블에서 트레이너의 회원 정보를 조회할 수 있다."
+    },
+    "pt_log": {
+        "columns": ["id", "member_id", "trainer_id"],
+        "description": "PT 수업 일지"
+    },
+    "pt_log_exercise": {
+        "columns": ["id", "pt_log_id", "exercise_id", "sets", "reps", "weight"],
+        "description": "PT 수업 일지에 포함된 운동 정보"
     }
 }
 

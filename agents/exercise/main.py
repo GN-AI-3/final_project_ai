@@ -44,7 +44,7 @@ class ExerciseAgent(BaseAgent):
 
         initial_state = RoutingState(
             message=message,
-            user_type="member",
+            user_type="trainer",
             member_id=3,
             trainer_id=1
         )

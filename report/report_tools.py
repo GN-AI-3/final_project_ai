@@ -85,6 +85,30 @@ def process_pt_log_result(rows):
         result.append(pt_log_entry)
     return result
 
+def select_gender(pt_contract_id: int) -> str:
+    """
+    member 테이블에서 성별을 조회하는 tool.
+    """
+
+    query = """
+        SELECT m.gender
+        FROM pt_contract pc
+        JOIN member m ON pc.member_id = m.id
+        WHERE pc.id = %s;
+    """
+
+    params = (pt_contract_id,)
+
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+    
+    if rows[0][0] == 'M':
+        return '남자'
+    else:
+        return '여자'
+
 def select_inbody_data(pt_contract_id: int) -> str:
     """
     inbody 테이블에서 inbody 정보를 조회하는 노드
@@ -126,3 +150,81 @@ def process_inbody_data(rows):
         }
         result.append(inbody_entry)
     return result
+
+def select_meal_records(pt_contract_id: int) -> str:
+    """
+    meal_records 테이블에서 식사 기록을 조회하는 tool.
+    """
+
+    query = """
+        SELECT 
+            mr.meal_date,
+            mr.food_name,
+            mr.meal_type,
+            mr.calories,
+            mr.carbs,
+            mr.fat,
+            mr.protein
+        FROM 
+            meal_records mr
+        WHERE 
+            mr.member_id = (
+                SELECT pc.member_id
+                FROM pt_contract pc
+                WHERE pc.id = %s
+            )
+            AND mr.meal_date >= CURRENT_DATE - INTERVAL '7 days'
+        ORDER BY 
+            mr.meal_date DESC;
+    """
+
+    params = (pt_contract_id,)
+
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows
+        
+def process_meal_records(rows):
+    result = []
+    for row in rows:
+        meal_record_entry = {
+            "meal_date": row[0],
+            "food_name": row[1],
+            "meal_type": row[2],
+            "calories": row[3],
+            "carbs": row[4],
+            "fat": row[5],
+            "protein": row[6]
+        }
+        result.append(meal_record_entry)
+    return result
+
+def select_user_goal(pt_contract_id: int) -> str:
+    """
+    member 테이블에서 사용자 목표를 조회하는 tool.
+    """
+
+    query = """
+        SELECT 
+            m.goal
+        FROM 
+            member m
+        WHERE 
+            m.id = (
+                SELECT pc.member_id
+                FROM pt_contract pc
+                WHERE pc.id = %s
+            );
+    """
+
+    params = (pt_contract_id,)
+
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return rows
+
+

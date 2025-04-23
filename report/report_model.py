@@ -7,4 +7,4 @@ class reportState(BaseModel):
     diet_report: dict = {}
     inbody_report: dict = {}
     response: str = ""
-
+    gender: str = ""

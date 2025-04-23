@@ -8,7 +8,7 @@ import re
 
 from langchain.agents import tool
 
-from ..utils.date_utils import validate_date_format
+from ..utils.date_utils import validate_date_format, parse_relative_date
 from ..core.database import execute_query
 
 # API 기본 URL 설정 - 환경 변수 사용
@@ -134,19 +134,30 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         str: 중복 예약이 있는 경우 에러 메시지, 없는 경우 None
     """
     try:
+        print("[DEBUG] check_existing_schedule 함수 시작")
+        print(f"[DEBUG] 입력된 시간 - 시작: {start_dt}, 종료: {end_dt}")
+        
         # pt_contract_id로 trainer_id 찾기
         pt_contract_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        print(f"[DEBUG] 토큰에서 추출한 pt_contract_id: {pt_contract_id}")
         
+        if pt_contract_id == 0:
+            print("[DEBUG] pt_contract_id가 0입니다")
+            return "트레이너 정보를 찾을 수 없습니다."
+            
         trainer_query = f"""
             SELECT trainer_id
             FROM pt_contract
             WHERE id = {pt_contract_id}
             LIMIT 1;
         """
+        print(f"[DEBUG] trainer_id 조회 쿼리: {trainer_query}")
         
         trainer_result = execute_query(trainer_query)
+        print(f"[DEBUG] trainer_id 조회 결과: {trainer_result}")
         
         if not trainer_result or trainer_result == "데이터가 없습니다.":
+            print("[DEBUG] trainer_result가 없거나 '데이터가 없습니다'")
             return "트레이너 정보를 찾을 수 없습니다."
             
         # 문자열에서 숫자만 추출
@@ -155,13 +166,17 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
             numbers = re.findall(r'\d+', trainer_result)
             if numbers:
                 trainer_id = int(numbers[0])
+                print(f"[DEBUG] 추출된 trainer_id: {trainer_id}")
             else:
+                print("[DEBUG] trainer_result에서 숫자를 추출할 수 없습니다")
                 return "트레이너 정보를 찾을 수 없습니다."
         else:
+            print("[DEBUG] trainer_result가 문자열이 아님")
             return "트레이너 정보를 찾을 수 없습니다."
         
         start_time_str = start_dt.strftime('%Y-%m-%d %H:%M:%S')
         end_time_str = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[DEBUG] 검색할 시간 범위 - 시작: {start_time_str}, 종료: {end_time_str}")
         
         check_query = f"""
             SELECT start_time, end_time
@@ -178,11 +193,14 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
             )
             LIMIT 1;
         """
+        print(f"[DEBUG] 중복 예약 확인 쿼리: {check_query}")
         
         result = execute_query(check_query)
+        print(f"[DEBUG] 중복 예약 확인 결과: {result}")
         
         # 결과가 없거나 "데이터가 없습니다"인 경우
         if not result or result == "데이터가 없습니다.":
+            print("[DEBUG] 중복 예약이 없음")
             return None
         
         # 결과가 문자열인 경우
@@ -193,6 +211,7 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
             if len(datetimes) >= 2:
                 existing_start = datetime.strptime(datetimes[0], '%Y-%m-%d %H:%M:%S')
                 existing_end = datetime.strptime(datetimes[1], '%Y-%m-%d %H:%M:%S')
+                print(f"[DEBUG] 중복 예약 시간 - 시작: {existing_start}, 종료: {existing_end}")
                 
                 start_str = existing_start.strftime('%Y-%m-%d %H:%M')
                 end_str = existing_end.strftime('%H:%M')
@@ -200,14 +219,17 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
                     f"죄송해요. 해당 시간대({start_str} ~ {end_str})에 "
                     "이미 예약이 있어요. 다른 시간으로 예약해보시는 건 어떨까요?"
                 )
+            print("[DEBUG] 중복 예약 시간 정보 추출 실패")
             return (
                 "죄송해요. 해당 시간대에 이미 예약이 있어요. "
                 "다른 시간으로 예약해보시는 건 어떨까요?"
             )
         
+        print("[DEBUG] 중복 예약이 없음")
         return None
         
     except Exception as e:
+        print(f"[DEBUG] 예외 발생: {str(e)}")
         return f"예약 중복 확인 중 오류가 발생했습니다: {str(e)}"
 
 @tool
@@ -215,29 +237,61 @@ def get_user_schedule(input: str = "") -> str:
     """사용자의 스케줄을 조회합니다.
     
     Args:
-        input (str, optional): 입력 문자열. 기본값은 ""
+        input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
         
     Returns:
         str: JSON 형식의 스케줄 정보
     """
     try:
-        schedules = make_api_request("pt_schedules")
-        formatted_schedules = []
+        print(f"[DEBUG] get_user_schedule 시작 - 입력: {input}")
         
+        # 전체 일정 조회
+        schedules = make_api_request("pt_schedules")
+        print(f"[DEBUG] 전체 일정 조회 결과: {schedules}")
+        
+        # 상대적인 날짜 처리
+        target_date_range = parse_relative_date(input)
+        print(f"[DEBUG] 상대적 날짜 파싱 결과: {target_date_range}")
+        
+        # SCHEDULED 상태의 일정만 필터링
+        scheduled_schedules = []
         for schedule in schedules:
             if schedule.get("status") == "SCHEDULED":
                 try:
+                    # Unix timestamp를 datetime으로 변환
                     start_time = datetime.fromtimestamp(schedule.get("startTime"))
-                    end_time = datetime.fromtimestamp(schedule.get("endTime"))
                     
-                    formatted_schedule = {
-                        "reservationId": schedule.get("reservationId"),
-                        "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
-                        "endTime": end_time.strftime("%H:%M")
-                    }
-                    formatted_schedules.append(formatted_schedule)
-                except (TypeError, ValueError):
+                    # 날짜 범위 내의 일정만 포함
+                    if target_date_range and all(target_date_range):
+                        # target_date_range가 정수인 경우 datetime으로 변환
+                        start_dt = datetime(target_date_range[0], target_date_range[1], target_date_range[2])
+                        end_dt = datetime(target_date_range[3], target_date_range[4], target_date_range[5])
+                        if start_dt.date() <= start_time.date() <= end_dt.date():
+                            scheduled_schedules.append(schedule)
+                    else:
+                        scheduled_schedules.append(schedule)
+                except (TypeError, ValueError) as e:
+                    print(f"[DEBUG] 일정 시간 변환 오류: {str(e)}")
                     continue
+        
+        print(f"[DEBUG] 필터링된 일정 수: {len(scheduled_schedules)}")
+        
+        # 일정을 날짜 순으로 정렬
+        scheduled_schedules.sort(key=lambda x: x.get("startTime", 0))
+        
+        formatted_schedules = []
+        for schedule in scheduled_schedules:
+            try:
+                start_time = datetime.fromtimestamp(schedule.get("startTime"))
+                
+                formatted_schedule = {
+                    "reservationId": schedule.get("reservationId"),
+                    "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M")
+                }
+                formatted_schedules.append(formatted_schedule)
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] 일정 포맷팅 오류: {str(e)}")
+                continue
         
         return json.dumps({
             "success": True,
@@ -245,6 +299,7 @@ def get_user_schedule(input: str = "") -> str:
         }, ensure_ascii=False)
         
     except Exception as e:
+        print(f"[DEBUG] 예외 발생: {str(e)}")
         return json.dumps({
             "success": False,
             "error": f"일정 조회 중 오류가 발생했습니다: {str(e)}"
