@@ -18,7 +18,7 @@ query_gen_system = """You are a SQL expert with a strong attention to detail.
 Given an input question, output a syntactically correct PostgreSQL query to run, then look at the results of the query and return the answer.
 
 When generating the query:
-Output the SQL query that answers the input question without a tool call.
+Output the SQL query that answers the input question.
 
 You can order the results by a relevant column to return the most interesting examples in the database.
 Never query for all the columns from a specific table, only ask for the relevant columns given the question.

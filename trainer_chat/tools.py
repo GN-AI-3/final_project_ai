@@ -41,10 +41,16 @@ def db_query_tool(query: str) -> str:
         return "Error: Query failed. Please rewrite your query and try again."
     return result
 
-@tool
-def time_expression_to_sql_tool(user_input: str) -> dict:
+def time_expression_to_sql(user_input: str) -> dict:
     """
-    사용자의 자연어 입력에서 상대적 시간 표현을 추출하여 SQL 쿼리로 변환합니다.
+    사용자 입력에서 시간 조건을 추출하여 SQL 시간 조건으로 변환합니다.
+
+    Parameters:
+    - user_input: 사용자의 자연어 입력 전체(시간, 이벤트 등 포함)
+
+    Returns:
+    - sql_start_expr: SQL 시작 시간 조건 ex) DATE_TRUNC('week', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')
+    - sql_end_expr: SQL 종료 시간 조건 ex) DATE_TRUNC('week', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul') + INTERVAL '1 week
     """
     from langchain.prompts import PromptTemplate
 
@@ -66,6 +72,15 @@ def time_expression_to_sql_tool(user_input: str) -> dict:
         return "Error: LLM 응답 파싱 실패"
     
     return { "sql_start_expr": result["sql_start_expr"], "sql_end_expr": result["sql_end_expr"] }
+
+time_expression_to_sql_tool = Tool.from_function(
+    name="time_expression_to_sql",
+    description=(
+        "human 메세지를 받아서 해당 메세지에 대한 sql 쿼리를 생성한다."
+        "- user_input: human 메세지 전체"
+    ),
+    func=time_expression_to_sql
+)
 
 query_check_prompt = ChatPromptTemplate.from_messages([
     ("system", query_check_system), ("placeholder", "{messages}")

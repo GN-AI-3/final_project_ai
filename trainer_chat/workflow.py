@@ -55,26 +55,7 @@ def model_check_query(state: State) -> dict[str, list[AIMessage]]:
 model_get_schema = ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools([
     get_schema_tool
 ])
-
-def query_gen_node(state: State):
-    message = query_gen.invoke(state)
-    print("🔍 query_gen_node:\n", message)
-    tool_messages = []
-    if message.tool_calls:
-        for tc in message.tool_calls:
-            print("\n📄 Generated SQL Query:\n", tc["args"])
-            print("================================================")
-            if tc["name"] != "SubmitFinalAnswer":
-                tool_messages.append(
-                    ToolMessage(
-                        content=f"Error: The wrong tool was called: {tc['name']}. Please fix your mistakes. Remember to only call SubmitFinalAnswer to submit the final answer. Generated queries should be outputted WITHOUT a tool call.",
-                        tool_call_id=tc["id"],
-                    )
-                )
-    else:
-        tool_messages = []
-    return {"messages": [message] + tool_messages}
-    
+   
 def should_continue(state: State) -> Literal["query_gen", "execute_query"]:
     messages = state["messages"]
     last_message = messages[-1]
@@ -92,7 +73,14 @@ workflow.add_node(
     },
 )
 
-workflow.add_node("query_gen", query_gen_node)
+workflow.add_node(
+    "query_gen",
+    lambda state: {
+        "messages": [query_gen.invoke(state)],
+    },
+)
+
+# workflow.add_node("query_gen", query_gen_node)
 workflow.add_node("correct_query", model_check_query)
 workflow.add_node("execute_query", create_tool_node_with_fallback([db_query_tool]))
 workflow.add_node("finalize_answer", lambda state: {
