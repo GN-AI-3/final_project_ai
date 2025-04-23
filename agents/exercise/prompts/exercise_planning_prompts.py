@@ -131,8 +131,8 @@ EXERCISE_PLANNING_PROMPT_3 = """
 "{message}"
 
 [4] 사용자 ID:
-"{member_id}"
-
+사용자가 회원인 경우 : "{member_id}"
+사용자가 트레이너인 경우 : "{trainer_id}"
 ---
 
 [5] 아래의 모든 조건에 반드시 따를 것:
@@ -188,7 +188,8 @@ You MAY omit the "tool" field or set it to null if the step can be completed by 
 "{message}"
 
 [4] USER ID:
-"{member_id}"
+if user is member: "{member_id}"
+if user is trainer: "{trainer_id}"
 
 [5] FEEDBACK ON PREVIOUS PLAN:
 "{feedback}"
