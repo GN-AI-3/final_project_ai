@@ -3,7 +3,7 @@ from langgraph.graph.message import AnyMessage, add_messages
 from langchain_core.messages import AIMessage, ToolMessage
 from typing import Annotated, Literal
 from typing_extensions import TypedDict
-from .tools import get_schema_tool, db_query_tool, query_check, query_gen, SubmitFinalAnswer
+from .tools import get_schema_tool, db_query_tool, query_check, query_gen, SubmitFinalAnswer, time_expression_to_sql_tool
 from langchain_openai import ChatOpenAI
 
 # State 정의
@@ -52,6 +52,22 @@ def first_tool_call(state: State) -> dict[str, list[AIMessage]]:
 def model_check_query(state: State) -> dict[str, list[AIMessage]]:
     return {"messages": [query_check.invoke({"messages": [state["messages"][-1]]})]}
 
+def query_gen_node(state: State):
+    message = query_gen.invoke(state)
+
+    tool_calls = message.tool_calls
+    tool_messages = []
+    for tc in tool_calls:
+        if tc["name"] == "time_expression_to_sql":
+            result = time_expression_to_sql_tool.invoke(tc["args"])
+            tool_messages.append(
+                ToolMessage(
+                    content=result,
+                    tool_call_id=tc["id"]
+                )
+            )
+    return {"messages": [message] + tool_messages}
+
 model_get_schema = ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools([
     get_schema_tool
 ])
@@ -73,14 +89,7 @@ workflow.add_node(
     },
 )
 
-workflow.add_node(
-    "query_gen",
-    lambda state: {
-        "messages": [query_gen.invoke(state)],
-    },
-)
-
-# workflow.add_node("query_gen", query_gen_node)
+workflow.add_node("query_gen", query_gen_node)
 workflow.add_node("correct_query", model_check_query)
 workflow.add_node("execute_query", create_tool_node_with_fallback([db_query_tool]))
 workflow.add_node("finalize_answer", lambda state: {
@@ -100,7 +109,8 @@ workflow.add_conditional_edges(
     should_continue,
     {
         "query_gen": "query_gen",
-        "execute_query": "execute_query"
+        "execute_query": "execute_query",
+        "finalize_answer": "finalize_answer"
     }
 )
 

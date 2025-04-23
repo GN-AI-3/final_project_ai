@@ -6,7 +6,6 @@ from .db_utils import db
 from langchain.tools import Tool
 import re
 import datetime
-import dateparser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from .prompts import query_gen_system, query_check_system, time_range_to_sql_prompt
@@ -73,13 +72,17 @@ def time_expression_to_sql(user_input: str) -> dict:
     
     return { "sql_start_expr": result["sql_start_expr"], "sql_end_expr": result["sql_end_expr"] }
 
+class TimeExpressionInput(BaseModel):
+    user_input: str = Field(..., description="human 메세지 전체")
+
 time_expression_to_sql_tool = Tool.from_function(
     name="time_expression_to_sql",
     description=(
         "human 메세지를 받아서 해당 메세지에 대한 sql 쿼리를 생성한다."
         "- user_input: human 메세지 전체"
     ),
-    func=time_expression_to_sql
+    func=time_expression_to_sql,
+    args_schema=TimeExpressionInput
 )
 
 query_check_prompt = ChatPromptTemplate.from_messages([
