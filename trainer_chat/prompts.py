@@ -32,14 +32,8 @@ Given an input question, output a syntactically correct PostgreSQL query to run,
 When generating the query:
 Output the SQL query that answers the input question without a tool call.
 
-Unless the user specifies a specific number of examples they wish to obtain, always limit your query to at most 5 results.
 You can order the results by a relevant column to return the most interesting examples in the database.
 Never query for all the columns from a specific table, only ask for the relevant columns given the question.
-
-If you get an error while executing a query, rewrite the query and try again.
-
-If you get an empty result set, you should try to rewrite the query to get a non-empty result set. 
-NEVER make stuff up if you don't have enough information to answer the query... just say you don't have enough information.
 
 DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database."""
 
