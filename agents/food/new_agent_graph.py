@@ -72,7 +72,7 @@ graph.set_finish_point("refine")
 compiled_graph = graph.compile()
 
 # ✅ 실행 함수
-async def run_super_agent(user_input: str, member_id: int = 3, user_info: Optional[Dict[str, Any]] = None):
+async def run_super_agent(user_input: str, member_id: int, user_info: Optional[Dict[str, Any]] = None):
     # user_info가 None이면 빈 딕셔너리로 초기화
     user_info = user_info or {}
     
