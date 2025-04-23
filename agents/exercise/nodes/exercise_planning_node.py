@@ -6,10 +6,6 @@ from ..prompts.exercise_planning_prompts import EXERCISE_PLANNING_PROMPT_4
 import json
 
 TABLE_SCHEMA_FOR_MEMBER = {
-    "exercise": {
-        "columns": ["id", "name", "exercise_type"],
-        "description": "운동 종류 목록. name은 운동명이며, exercise_type은 카테고리입니다 (예: 유산소 등)."
-    },
     "exercise_record": {
         "columns": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
         "foreign_keys": {
@@ -60,29 +56,41 @@ TOOL_DESCRIPTIONS_FOR_MEMBER = [
 ]
 
 TABLE_SCHEMA_FOR_TRAINER = {
-    "exercise": {
-        "columns": ["id", "name", "exercise_type"],
-        "description": "운동 종류 목록. name은 운동명이며, exercise_type은 카테고리입니다 (예: 유산소 등)."
-    },
     "exercise_record": {
         "columns": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
         "foreign_keys": {
             "member_id": "member.id",
             "exercise_id": "exercise.id"
         },
-        "description": "사용자의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다."
+        "description": "회원의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다."
     },
     "member": {
         "columns": ["id", "name", "email", "phone", "profile_image", "goal"],
-        "description": "사용자 정보. goal은 사용자의 운동 목표입니다 (예: 벌크업, 체중 감량)."
+        "description": "회원 정보. goal은 회원의 운동 목표입니다 (예: 벌크업, 체중 감량)."
     },
     "pt_contract" : {
-        "columns": ["member_id", "trainer_id"],
+        "columns": ["id","member_id", "trainer_id"],
         "foreign_keys": {
             "member_id": "member.id",
             "trainer_id": "trainer.id"
         },
-        "description": "PT 계약 정보. status는 계약 상태입니다 (예: 진행중, 종료)."
+        "description": "PT 계약 정보, 이 테이블에서 트레이너의 회원 정보를 조회할 수 있다."
+    },
+    "pt_log": {
+        "columns": ["id", "member_id", "trainer_id"],
+        "foreign_keys": {
+            "member_id": "member.id",
+            "trainer_id": "trainer.id"
+        },
+        "description": "PT 수업 일지"
+    },
+    "pt_log_exercise": {
+        "columns": ["id", "pt_log_id", "exercise_id", "sets", "reps", "weight"],
+        "foreign_keys": {
+            "pt_log_id": "pt_log.id",
+            "exercise_id": "exercise.id"
+        },
+        "description": "PT 수업 일지에 포함된 운동 정보"
     }
 }
 
@@ -150,10 +158,12 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         handle_parse_errors=True,
     )
 
+    print("User type: ", state.user_type)
     if state.user_type == "member":
         response = agent_executor.invoke({
             "message": message,
             "member_id": member_id,
+            "trainer_id": None,
             "table_schema": json.dumps(TABLE_SCHEMA_FOR_MEMBER, indent=2, ensure_ascii=False),
             "tool_descriptions": json.dumps(TOOL_DESCRIPTIONS_FOR_MEMBER, indent=2, ensure_ascii=False),
             "feedback": feedback
@@ -161,9 +171,11 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
     elif state.user_type == "trainer":
         response = agent_executor.invoke({
             "message": message,
+            "member_id": None,
             "trainer_id": trainer_id,
             "table_schema": json.dumps(TABLE_SCHEMA_FOR_TRAINER, indent=2, ensure_ascii=False),
             "tool_descriptions": json.dumps(TOOL_DESCRIPTIONS_FOR_TRAINER, indent=2, ensure_ascii=False),
+            "feedback": feedback
         })
 
     print("exercise planning response: ", response["output"])
