@@ -8,7 +8,7 @@ import re
 
 from langchain.agents import tool
 
-from ..utils.date_utils import validate_date_format
+from ..utils.date_utils import validate_date_format, parse_relative_date
 from ..core.database import execute_query
 
 # API 기본 URL 설정 - 환경 변수 사용
@@ -237,29 +237,61 @@ def get_user_schedule(input: str = "") -> str:
     """사용자의 스케줄을 조회합니다.
     
     Args:
-        input (str, optional): 입력 문자열. 기본값은 ""
+        input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
         
     Returns:
         str: JSON 형식의 스케줄 정보
     """
     try:
-        schedules = make_api_request("pt_schedules")
-        formatted_schedules = []
+        print(f"[DEBUG] get_user_schedule 시작 - 입력: {input}")
         
+        # 전체 일정 조회
+        schedules = make_api_request("pt_schedules")
+        print(f"[DEBUG] 전체 일정 조회 결과: {schedules}")
+        
+        # 상대적인 날짜 처리
+        target_date_range = parse_relative_date(input)
+        print(f"[DEBUG] 상대적 날짜 파싱 결과: {target_date_range}")
+        
+        # SCHEDULED 상태의 일정만 필터링
+        scheduled_schedules = []
         for schedule in schedules:
             if schedule.get("status") == "SCHEDULED":
                 try:
+                    # Unix timestamp를 datetime으로 변환
                     start_time = datetime.fromtimestamp(schedule.get("startTime"))
-                    end_time = datetime.fromtimestamp(schedule.get("endTime"))
                     
-                    formatted_schedule = {
-                        "reservationId": schedule.get("reservationId"),
-                        "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
-                        "endTime": end_time.strftime("%H:%M")
-                    }
-                    formatted_schedules.append(formatted_schedule)
-                except (TypeError, ValueError):
+                    # 날짜 범위 내의 일정만 포함
+                    if target_date_range and all(target_date_range):
+                        # target_date_range가 정수인 경우 datetime으로 변환
+                        start_dt = datetime(target_date_range[0], target_date_range[1], target_date_range[2])
+                        end_dt = datetime(target_date_range[3], target_date_range[4], target_date_range[5])
+                        if start_dt.date() <= start_time.date() <= end_dt.date():
+                            scheduled_schedules.append(schedule)
+                    else:
+                        scheduled_schedules.append(schedule)
+                except (TypeError, ValueError) as e:
+                    print(f"[DEBUG] 일정 시간 변환 오류: {str(e)}")
                     continue
+        
+        print(f"[DEBUG] 필터링된 일정 수: {len(scheduled_schedules)}")
+        
+        # 일정을 날짜 순으로 정렬
+        scheduled_schedules.sort(key=lambda x: x.get("startTime", 0))
+        
+        formatted_schedules = []
+        for schedule in scheduled_schedules:
+            try:
+                start_time = datetime.fromtimestamp(schedule.get("startTime"))
+                
+                formatted_schedule = {
+                    "reservationId": schedule.get("reservationId"),
+                    "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M")
+                }
+                formatted_schedules.append(formatted_schedule)
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] 일정 포맷팅 오류: {str(e)}")
+                continue
         
         return json.dumps({
             "success": True,
@@ -267,6 +299,7 @@ def get_user_schedule(input: str = "") -> str:
         }, ensure_ascii=False)
         
     except Exception as e:
+        print(f"[DEBUG] 예외 발생: {str(e)}")
         return json.dumps({
             "success": False,
             "error": f"일정 조회 중 오류가 발생했습니다: {str(e)}"

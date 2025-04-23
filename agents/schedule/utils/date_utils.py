@@ -2,14 +2,15 @@ import re
 from datetime import datetime, timedelta
 from typing import Union, Tuple, Optional
 
-def _parse_relative_date(date_str: str) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+def parse_relative_date(date_str: str) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[int], Optional[int], Optional[int]]:
     """상대적 날짜 표현을 파싱합니다. (예: 오늘, 내일, 다음주 수요일 등)
     
     Args:
         date_str: 파싱할 날짜 문자열
         
     Returns:
-        Tuple[Optional[int], Optional[int], Optional[int]]: (년, 월, 일) 또는 (None, None, None)
+        Tuple[Optional[int], Optional[int], Optional[int], Optional[int], Optional[int], Optional[int]]: 
+        (시작년, 시작월, 시작일, 종료년, 종료월, 종료일) 또는 (None, None, None, None, None, None)
     """
     now = datetime.now()
     today = now.date()
@@ -30,11 +31,33 @@ def _parse_relative_date(date_str: str) -> Tuple[Optional[int], Optional[int], O
     try:
         date_str = date_str.strip().replace(" ", "")
 
+        # "다다음 주" 처리 (우선순위 가장 높음)
+        if "다다음주" in date_str and not any(wk in date_str for wk in weekdays.keys()):
+            # 다음 주 월요일 계산
+            days_to_next_monday = (7 - today.weekday()) % 7
+            next_monday = today + timedelta(days=days_to_next_monday)
+            # 다다음 주 월요일 계산 (다음 주 월요일 + 7일)
+            next_next_monday = next_monday + timedelta(days=7)
+            # 다다음 주 일요일 계산 (다다음 주 월요일 + 6일)
+            next_next_sunday = next_next_monday + timedelta(days=6)
+            return (next_next_monday.year, next_next_monday.month, next_next_monday.day,
+                    next_next_sunday.year, next_next_sunday.month, next_next_sunday.day)
+
+        # "다음 주" 처리
+        if "다음주" in date_str and not any(wk in date_str for wk in weekdays.keys()):
+            # 다음 주 월요일 계산
+            days_to_next_monday = (7 - today.weekday()) % 7
+            next_monday = today + timedelta(days=days_to_next_monday)
+            # 다음 주 일요일 계산
+            next_sunday = next_monday + timedelta(days=6)
+            return (next_monday.year, next_monday.month, next_monday.day,
+                    next_sunday.year, next_sunday.month, next_sunday.day)
+
         # 정확한 상대 표현 (오늘, 내일 등)
         if date_str in relative_dates:
             delta = relative_dates[date_str]
             target_date = today + timedelta(days=delta)
-            return target_date.year, target_date.month, target_date.day
+            return target_date.year, target_date.month, target_date.day, None, None, None
 
         # "다음주화요일", "다다음주목요일" 등의 표현
         for key in ["다다음주", "다음주"]:
@@ -44,21 +67,32 @@ def _parse_relative_date(date_str: str) -> Tuple[Optional[int], Optional[int], O
                         base_delta = relative_dates[key]
                         days_to_add = base_delta + (wk_num - today.weekday()) % 7
                         target_date = today + timedelta(days=days_to_add)
-                        return target_date.year, target_date.month, target_date.day
+                        return target_date.year, target_date.month, target_date.day, None, None, None
 
-        # "이번주 X요일" 또는 단순 "X요일"
+        # "이번주 X요일" 또는 단순 "X요일" 처리
         for wk_kor, wk_num in weekdays.items():
             if wk_kor in date_str:
-                days_to_add = (wk_num - today.weekday()) % 7
-                if days_to_add == 0 and "오늘" not in date_str:
-                    days_to_add = 7  # 오늘이 월요일인데 "월요일"이라고 하면 다음 주로 간주
-                target_date = today + timedelta(days=days_to_add)
-                return target_date.year, target_date.month, target_date.day
+                # 요일이 오늘과 같으면 오늘로 처리
+                if wk_num == today.weekday():
+                    return today.year, today.month, today.day, None, None, None
+                
+                # 지난 요일이면 다음 주로 처리
+                if wk_num < today.weekday():
+                    # 다음 주 월요일 계산
+                    days_to_next_monday = (7 - today.weekday()) % 7
+                    next_monday = today + timedelta(days=days_to_next_monday)
+                    # 다음 주의 해당 요일 계산
+                    target_date = next_monday + timedelta(days=wk_num)
+                    return target_date.year, target_date.month, target_date.day, None, None, None
+                
+                # 이번 주 내의 요일로 처리
+                target_date = today + timedelta(days=wk_num - today.weekday())
+                return target_date.year, target_date.month, target_date.day, None, None, None
 
-        return None, None, None
+        return None, None, None, None, None, None
 
     except Exception as e:
-        return None, None, None
+        return None, None, None, None, None, None
 
 
 def _parse_hour(hour_str: Union[str, int]) -> Tuple[Optional[int], Optional[str]]:
@@ -230,7 +264,7 @@ def validate_date_format(
             except ValueError:
                 return None, "죄송해요. 날짜 형식이 올바르지 않아요. 'YYYY년 MM월 DD일' 형식으로 입력해주세요."
 
-        rel_year, rel_month, rel_day = _parse_relative_date(str(day))
+        rel_year, rel_month, rel_day = parse_relative_date(str(day))
         if rel_year is not None:
             start_dt = datetime(rel_year, rel_month, rel_day, input_hour, 0)
             end_dt = start_dt + timedelta(hours=1)

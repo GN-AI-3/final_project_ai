@@ -19,6 +19,16 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
 - 사용자 요청을 해결하기 위해 필요한 정보를 판단하고
 - 도구 실행, 질문 생성, SQL 조회 여부 등을 포함한 계획을 수립해줘.
 [💡 핵심 원칙]
+✅ "단백질 많은 음식 추천해줘", "고단백 음식 뭐 있어?" 와 같은 입력은
+→ 음식 리스트 추천인지, 하루 식단 추천인지 명확히 판단해야 해.
+
+ 
+
+- "단백질 위주로 먹고 싶은데", "고단백 식단 추천해줘", "단백질 위주 식단 짜줘"처럼 **식단 구성이 목적**이면
+→ `recommend_diet_tool` 실행 (goal을 고단백으로 판단)
+
+판단이 애매한 경우에는 → 사용자에게 질문을 유도해야 해:
+예: "단백질이 많은 음식을 추천받고 싶으신가요, 아니면 하루 식단을 구성해드릴까요?"
 
 1. ✅ 식단 추천 요청 시에만 필수 정보(goal, allergies 등)가 없으면 질문을 생성해야 해
     - recommend_diet_tool 실행 시 context 또는 입력에 아래 항목 중 하나라도 없으면 → ask_user 필드에 질문 생성
@@ -50,6 +60,7 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
 7. **"최근 식사 기록을 TDEE와 비교해줘"**라는 요청이 들어오면 meal_record_gap_report_tool을 사용합니다.
 [0. 의도 감지 우선 순위]
 - "바나나 먹었어", "점심에 라면 먹음" 같은 입력 → record_meal_tool 실행
+
 - "식단 추천해줘" → recommend_diet_tool 실행
 - "다이어트 중이야", "알레르기가 있어" → save_user_goal_and_diet_info 실행
 - "요약해줘", "피드백 줘" → summarize_nutrition_tool, diet_feedback_tool 등 실행
@@ -57,8 +68,10 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
     → get_meal_records_tool 도구를 사용할 경우:
       - tool_input에는 최소한 "member_id"와 "days" 필드를 포함해야 해.
       - days 값이 명시되지 않으면 기본값 7을 넣어줘.
-- "내 알레르기 뭐야?", "내 정보 보여줘", "최근 몸무게" 같이 **DB 조회 질문**이면 → sql_query_runner 실행
+- "내 알레르기 뭐야?", "선호음식", "비선호음식", "최근 식단 기록" 같이 **DB 조회 질문**일 경우에만 → sql_query_runner 실행
     - tool_input에는 input 키에 자연어 그대로 전달
+- 질문이 "비타민", "섭취량", "많이 먹으면", "부작용" 등 → 단순 DB 조회가 아닌 일반 영양 지식
+→ 이런 경우 반드시 smart_nutrition_resolver 사용해야 해
 
 [1. 사용자가 goal, allergies, food_preferences, food_avoidances 중 하나라도 명시했으면]
 → save_user_goal_and_diet_info 도구 실행.
@@ -118,14 +131,61 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
 [7. 정보가 충분하면 final_output으로 자연어 응답 작성.]
 
 [8. 외부 지식 필요 시 → web_search_and_summary 도구 실행.]
+
  
+[9. 도구를 정확히 찾지 못하거나, 복합적인 질문인 경우]
+예: 일반 영양 지식 질문이면
+→ smart_nutrition_resolver 도구를 사용하세요.
+  - 키워드 예시:
+    - "하루 권장량"
+    - "하루 단백질"
+    - "얼마나 먹어야"
+    - "섭취 기준"
+    - "일일 섭취량"
+    - "영양소 기준"
+    - "영양 정보"
+    - "필요한 양"
+    - "영양소 비교"
+    - "비타민 A 기준"
+[10. 특정 조건에 맞는 음식 추천 요청이면 → smart_nutrition_resolver 실행]
+- 키워드 예시: 
+    - "단백질 많은 음식"
+    - "고단백 음식"
+    - "저염 음식"
+    - "철분 많은 음식"
+    - "영양소 풍부한 채소"
+    - "건강한 음식 추천"
+    - "영양가 높은 음식"
+    - "고칼슘 식품"
+    - "피로에 좋은 음식"     
+    - "여성에게 좋은 음식"
+    - "면역력에 좋은 음식"
+    - "음식 추천"
+ [11. 사용자가 선호음식, 알레르기, 비선호음식 등 diet_info 항목에 대해 "추가" 또는 "제거"를 명확히 말한 경우]
+→ save_user_goal_and_diet_info 도구를 실행하며, input에 원문 메시지를 넣어주세요.
+
+예시 입력:
+- "견과류도 알레르기에 추가해줘" → add: {{"allergies": "견과류"}}
+- "조류는 이제 괜찮아" → remove: {{"allergies": "조류"}}
+- "고기는 좋아하지만 밀가루는 피하고 싶어" → add: {{"food_preferences": "고기"}}, add: {{"food_avoidances": "밀가루"}}
+
+💡 판단 기준:
+- "추가해줘", "더 넣어줘", "좋아해", "먹고 싶어" → add로 간주
+- "빼줘", "이제 안 먹어", "제외해줘", "피하고 싶어" → remove로 간주
+
+📌 이 경우 context와 무관하게 도구를 실행하며 질문은 생성하지 않아야 합니다.
+📌 tool_input에는 {{ "member_id": 3, "input": "<사용자 원문>" }} 형태로 넣어야 합니다.
+
+
 [❗ 반드시 지켜야 할 규칙 ❗]
 1. ask_user가 있다면 → 나머지는 비워야 함
 2. 도구 실행과 질문은 절대 같이 사용하지 마
 3. 출력은 반드시 순수 JSON. ```json 은 ❌
-⚠️ 질문이 필요한 경우, 질문은 반드시 ask_user 배열에 넣고, final_output은 비워야 해.
+⚠️ 질문이 필요한 경우, 질문은 반드시 ask_user 배열에 넣고, final_out put은 비워야 해.
 ❌ 질문을 final_output에 넣지 마.
 ✔️ 질문은 각각 독립된 문장으로, 배열 형태로 넣어줘. (예: ["식사 패턴은 어떻게 되시나요?", "활동 수준은 어떤가요?"])
+[❗ 기타 예외 처리 ❗]
+- 질문이 도구로 명확히 매핑되지 않는 경우 → smart_nutrition_resolver 실행
 [도구 목록]
 {tool_names}
 
@@ -181,13 +241,19 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
   "need_tool": true,
   "tool_name": "sql_query_runner",
   "tool_input": {{
-    "input": "내 알레르기 정보 알려줘"
+    "input": "내 알레르기 정보 알려줘",
   }},
   "ask_user": [],
   "final_output": "",
   "context_missing": []
 }}
+
 """
+import re
+
+def extract_json_block(text: str) -> str:
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    return match.group(1).strip() if match else text.strip()
 
 def planner_node(state: AgentState) -> AgentState:
     user_input = state.user_input
@@ -212,7 +278,8 @@ def planner_node(state: AgentState) -> AgentState:
     response = llm.invoke([HumanMessage(content=planning_prompt)])
 
     try:
-        parsed = json.loads(response.content.strip())
+        json_content = extract_json_block(response.content)
+        parsed = json.loads(json_content)
 
         # ❌ ask_user와 도구 혼용 금지
         if parsed.get("ask_user") and (

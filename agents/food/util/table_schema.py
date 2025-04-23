@@ -43,7 +43,8 @@ table_schema = {
       "calories": "열량 (kcal)",
       "protein": "단백질 (g)",
       "carbs": "탄수화물 (g)",
-      "fat": "지방 (g)"
+      "fat": "지방 (g)",
+      "estimated_grams": "추정량 (g)"
     }
   },
   "recommended_diet_plans": {
@@ -89,7 +90,7 @@ table_schema = {
       "modified_at": "수정일시"
     }
   },
-  "user_diet_info": {
+  "member_diet_info": {
     "description": "사용자 식단 정보 요약",
     "columns": {
       "id": "식단 정보 ID (PK)",

@@ -29,6 +29,7 @@
 # save_user_goal_and_diet_info | 자연어로부터 사용자 식단 정보 추출 및 DB 저장
 
 
+from cgitb import text
 from datetime import datetime
 import json
 import re
@@ -58,7 +59,7 @@ load_dotenv()
 def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
     """
     스프링 부트 API를 호출하는 함수
-    - method: "POST" 또는 "PUT"
+    - method: "POST" 
     - JWT 토큰은 환경 변수에서 로드
     """
     url = f"{EC2_BACKEND_URL}{endpoint}"
@@ -67,16 +68,15 @@ def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {AUTH_TOKEN}"
     }
+    method = method.upper()
+
     try:
-        method = method.upper()
-        if method == "PUT":
+        if method == "PUT": 
             response = requests.put(url, json=data, headers=headers)
         elif method == "POST":
             response = requests.post(url, json=data, headers=headers)
         else:
             return {"error": f"지원하지 않는 HTTP 메서드: {method}"}
-
-        response.raise_for_status()
         return response.json()
 
     except requests.exceptions.RequestException as e:
@@ -171,19 +171,15 @@ def web_search_and_summary(params: dict) -> str:
     prompt_text = prompt.format(query=query, docs=docs)
     return llm.invoke([HumanMessage(content=prompt_text)]).content.strip()
 
-
+def clean_sql(sql: str) -> str:
+    import re
+    return re.sub(r"```(?:sql)?", "", sql).replace("```", "").strip()
 
 
 @tool
 def sql_query_runner(params: dict) -> str:
     """
     사용자의 자연어 입력을 기반으로 SQL SELECT 쿼리를 생성하고 실행합니다.
-    
-    예시 입력:
-    {
-        "input": "내 알레르기 정보 보여줘",
-        "member_id": 3
-    }
     """
 
     user_input = params.get("input", "")
@@ -194,15 +190,19 @@ def sql_query_runner(params: dict) -> str:
 
     try:
         # ✅ SQL 생성
-        sql = generate_sql(user_input, member_id=member_id)
+        raw_sql = generate_sql(user_input, member_id=member_id)
+
+        # ✅ 마크다운 제거
+        cleaned_sql = clean_sql(raw_sql)
 
         # ✅ SQL 실행
-        result = execute_sql(sql)
+        result = execute_sql(cleaned_sql)
 
-        return f"✅ [SQL 실행 결과]\n\n🧾 SQL: {sql}\n📦 결과:\n{result}"
+        return f"✅ [SQL 실행 결과]\n\n🧾 SQL: {cleaned_sql}\n📦 결과:\n{result}"
 
     except Exception as e:
         return f"❌ SQL 실행 중 오류 발생: {e}"
+
 @tool
 def sql_insert_runner(params: str, member_id: int) -> str:
     """사용자의 요청을 기반으로 SQL INSERT 쿼리를 생성하고 실행합니다."""
@@ -226,8 +226,9 @@ def strip_code_block(text: str) -> str:
 def save_user_goal_and_diet_info(params: dict) -> str:
     """
     자연어 입력에서 사용자 식단에 필요한 정보를 추출하고 DB에 자동 저장합니다.
+    기존 값과 병합하며, 제거 요청이 있는 경우 해당 값을 제거합니다.
     """
-    
+
     def extract_json_string(text: str) -> str:
         match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
         if match:
@@ -236,90 +237,109 @@ def save_user_goal_and_diet_info(params: dict) -> str:
             return text.strip()
         return ""
 
-    def check_diet_info_exists(member_id: int) -> bool:
-        query = f"SELECT 1 FROM member_diet_info WHERE member_id = {member_id} LIMIT 1;"
-        try:
-            result = execute_sql(query)
-            return bool(result)
-        except Exception as e:
-            print(f"❌ DB 조회 실패: {e}")
-            return False
+    def merge_values(existing: str, new_value: str, remove: bool = False) -> str:
+        existing = existing or ""  # None 방지
+        new_value = new_value or ""
+        existing_set = set([x.strip() for x in existing.split(",") if x.strip()])
+        new_set = set([x.strip() for x in new_value.split(",") if x.strip()])
+        if remove:
+            result_set = existing_set - new_set
+        else:
+            result_set = existing_set | new_set
+        return ",".join(sorted(result_set))
 
     try:
         user_input = params.get("input", "")
         member_id = params.get("member_id", 1)
 
-        # 사용자의 입력을 분석하여 JSON으로 정리
+        # 기존 식단 정보 조회
+        select_sql = f"SELECT * FROM member_diet_info WHERE member_id = {member_id}"
+        existing_result = execute_sql(select_sql)
+        existing_data = json.loads(existing_result)[0] if existing_result else {}
+
+        # LLM 추출 프롬프트
         extract_prompt = f"""
-        다음은 사용자의 자연어 입력이야. goal, gender, allergies 등의 정보를 추출해서 JSON으로 정리해줘.
-        누락된 값은 빈 문자열("")로 표시하고, 아래 형식을 지켜줘.
+        다음은 사용자의 자연어 입력이야. 사용자의 의도에 따라 기존 값에 대한 '추가(add)' 또는 '제거(remove)' 정보를 판단해줘.
+        각 항목은 문자열로, 누락된 값은 빈 문자열로 반환해.
+
+        ✅ 판단 기준:
+        - "좋아해", "선호해", "먹고 싶어", "더 넣어줘", "추가해줘" 등은 → food_preferences로 add
+        - "싫어해", "안 좋아해", "피하고 싶어", "비선호", "꺼려", "먹기 싫어" 등은 → food_avoidances로 add
+        - "알레르기 있어", "과민반응 있어"는 → allergies로 add
+        - "빼줘", "제외해줘", "이제 안 먹어", "삭제해줘" 등은 → remove로 처리 (context 보고 분기 가능)
+
+        💡 문맥이 모호한 경우, 아래처럼 판단해줘:
+        - "조류는 싫어해요" → food_avoidances (add)
+        - "견과류 알레르기 있어요" → allergies (add)
+        - "두부는 빼줘" → food_avoidances (add)
 
         [입력]
         {user_input}
 
-        [출력 형식]
+        [출력 예시]
         {{
-          "goal": "...",
-          "gender": "...",
-          "allergies": "...",
-          "food_preferences": "...",
-          "meal_pattern": "...",
-          "activity_level": "...",
-          "special_requirements": "...",
-          "food_avoidances": "..."
+        "goal": "다이어트",
+        "gender": "남성",
+        "add": {{
+            "allergies": "견과류",
+            "food_preferences": "소고기",
+            "food_avoidances": "두부"
+        }},
+        "remove": {{
+            "food_avoidances": "밀가루",
+              "food_preferences": "고기",
+  "allergies": "두부"
+        }}
         }}
         """
-        
-        # LLM 호출
+
+
         response = llm.invoke([HumanMessage(content=extract_prompt)])
         raw_response = response.content.strip()
-
+        print(raw_response)
         if not raw_response:
             return "❌ LLM 응답이 비어 있습니다."
 
-        # JSON 추출
         json_str = extract_json_string(raw_response)
-        
-        # JSON 파싱
-        try:
-            parsed = json.loads(json_str)
-        except Exception as e:
-            return f"❌ JSON 파싱 실패: {e}\n\n[응답 내용]\n{raw_response}"
+        parsed = json.loads(json_str)
 
-        # DB에 저장: 사용자 목표, 알레르기 등
+        # 사용자 정보 업데이트
         if parsed.get("goal") or parsed.get("gender"):
             member_data = {
                 "memberId": member_id,
-                "goal": parsed.get("goal", "")
+                "goal": parsed.get("goal", existing_data.get("goal", "")),
+                "gender": parsed.get("gender", existing_data.get("gender", ""))
             }
             member_result = call_spring_api("/api/member/update", member_data, method="POST")
+            if "error" in member_result:
+                return f"❌ 사용자 정보 업데이트 실패: {member_result['error']}"
 
-        # 식단 정보 저장
-        if any([
-            parsed.get("allergies"),
-            parsed.get("food_preferences"),
-            parsed.get("meal_pattern"),
-            parsed.get("activity_level"),
-            parsed.get("special_requirements")
-        ]):
-            diet_info_data = {
-                "memberId": member_id,
-                "allergies": parsed.get("allergies", ""),
-                "foodPreferences": parsed.get("food_preferences", ""),
-                "mealPattern": parsed.get("meal_pattern", ""),
-                "activityLevel": parsed.get("activity_level", ""),
-                "specialRequirements": parsed.get("special_requirements", "")
-            }
+        # 병합 처리
+        add = parsed.get("add", {})
+        remove = parsed.get("remove", {})
 
-            result = call_spring_api("/api/food/user/diet-info", diet_info_data, method="POST")
+        diet_info_data = {
+            "memberId": member_id,
+            "allergies": merge_values(existing_data.get("allergies"), add.get("allergies")) if add.get("allergies") else merge_values(existing_data.get("allergies"), remove.get("allergies"), remove=True) if remove.get("allergies") else existing_data.get("allergies", ""),
+            "foodPreferences": merge_values(existing_data.get("food_preferences"), add.get("food_preferences")) if add.get("food_preferences") else merge_values(existing_data.get("food_preferences"), remove.get("food_preferences"), remove=True) if remove.get("food_preferences") else existing_data.get("food_preferences", ""),
+            "mealPattern": parsed.get("meal_pattern", existing_data.get("meal_pattern", "") or ""),
+            "activityLevel": parsed.get("activity_level", existing_data.get("activity_level", "") or ""),
+            "specialRequirements": parsed.get("special_requirements", existing_data.get("special_requirements", "") or ""),
+            "foodAvoidances": merge_values(existing_data.get("food_avoidances"), add.get("food_avoidances")) if add.get("food_avoidances") else merge_values(existing_data.get("food_avoidances"), remove.get("food_avoidances"), remove=True) if remove.get("food_avoidances") else existing_data.get("food_avoidances", "")
+        }
+        print(diet_info_data)
+        # 저장 API 호출
+        method = "PUT" if existing_data else "POST"
+        result = call_spring_api("/api/food/user/diet-info", diet_info_data, method=method)
 
-            if "error" in result:
-                return f"❌ 식단 정보 저장 실패: {result['error']}"
+        if "error" in result:
+            return f"❌ 식단 정보 저장 실패: {result['error']}"
 
         return f"✅ 사용자 식단 정보 저장 완료\n\n{json.dumps(parsed, indent=2, ensure_ascii=False)}"
 
     except Exception as e:
         return f"❌ 오류 발생: {str(e)}"
+
 
 
 
@@ -426,9 +446,8 @@ def lookup_nutrition_tool(params: dict) -> str:
             문서:
             {info}
         """)
-        formatted_prompt = prompt.format(food_name=food_name, info=info)
+        formatted_prompt = prompt.format(food_name=food_name, info=info) 
         response = llm.invoke([HumanMessage(content=formatted_prompt)])
-
         return f"🧠 [LLM 추론 결과]\n{response.content.strip()}"
 
     except Exception as e:
@@ -506,16 +525,6 @@ def recommend_food_tool(params: dict) -> str:
 
     response = llm.invoke([HumanMessage(content=prompt)])
     return response.content.strip()
-from langchain.tools import tool
-import json
-from datetime import datetime
-from langchain.tools import tool
-from langchain.schema import HumanMessage
-from datetime import datetime
-import json
-import re
-import traceback
-
 @tool
 def recommend_diet_tool(params: dict) -> str:
     """
@@ -534,18 +543,23 @@ def recommend_diet_tool(params: dict) -> str:
         return "하루"
 
     def extract_json_block(text: str) -> str:
-        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-        if match:
-            return match.group(1)
-        elif "{" in text and "}" in text:
-            try:
-                return text[text.index("{"):text.rindex("}") + 1]
-            except:
-                return text
-        return text
+        """
+        텍스트에서 JSON 블록을 추출하는 함수.
+        """
+        try:
+            # JSON 구문 오류가 있을 경우 처리할 수 있는 코드 추가
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if match:
+                return match.group(1).strip()  # JSON 문자열 추출
+            if text.strip().startswith("{"):
+                return text.strip()  # 시작이 '{'이면 바로 반환
+            return ""  # JSON 형식이 아니면 빈 문자열 반환
+        except Exception as e:
+            return ""  # 예외가 발생하면 빈 문자열 반환
+
+
 
     try:
-        # ✅ 입력 파싱
         member_id = int(params.get("member_id", 1))
         raw_period = params.get("period") or params.get("meal_type") or "하루"
         period = standardize_period(raw_period)
@@ -579,14 +593,29 @@ def recommend_diet_tool(params: dict) -> str:
             "유지/균형 식단", "고단백/저탄수화물 식단", "고탄수/고단백 식단"
         ] else "유지/균형 식단"
 
-        # ✅ TDEE 및 영양 목표 계산
+        # 🎯 매크로 비율 정의
+        goal_macro_ratios = {
+            "다이어트 식단": {"protein_ratio": 0.30, "carbs_ratio": 0.45, "fat_ratio": 0.25, "examples": "닭가슴살, 브로콜리, 현미밥"},
+            "벌크업 식단": {"protein_ratio": 0.30, "carbs_ratio": 0.55, "fat_ratio": 0.15, "examples": "소고기, 고구마, 귀리, 올리브유"},
+            "체력 증진 식단": {"protein_ratio": 0.25, "carbs_ratio": 0.55, "fat_ratio": 0.20, "examples": "연어, 통밀 파스타, 바나나"},
+            "유지/균형 식단": {"protein_ratio": 0.25, "carbs_ratio": 0.50, "fat_ratio": 0.25, "examples": "두부, 잡곡밥, 달걀, 시금치"},
+            "고단백/저탄수화물 식단": {"protein_ratio": 0.40, "carbs_ratio": 0.35, "fat_ratio": 0.25, "examples": "닭가슴살, 아보카도, 삶은 달걀"},
+            "고탄수/고단백 식단": {"protein_ratio": 0.30, "carbs_ratio": 0.55, "fat_ratio": 0.15, "examples": "현미밥, 흰살생선, 고구마, 콩류"},
+        }
+
+        macro_ratio = goal_macro_ratios.get(goal, goal_macro_ratios["유지/균형 식단"])
+
+        protein_ratio = macro_ratio['protein_ratio']
+        carbs_ratio = macro_ratio['carbs_ratio']
+        fat_ratio = macro_ratio['fat_ratio']
+        example_foods = macro_ratio['examples']
+
         height = float(member_info.get("height", 170))
         weight = float(member_info.get("weight", 70))
         birth_date = member_info.get("birth_date", "2000-01-01")
         birth = datetime.strptime(birth_date, "%Y-%m-%d")
         today = datetime.now()
         age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
-        bmi = weight / ((height / 100) ** 2)
         bmr = 10 * weight + 6.25 * height - 5 * age + (5 if gender == "남성" else -161)
         tdee = bmr * 1.2
 
@@ -599,12 +628,11 @@ def recommend_diet_tool(params: dict) -> str:
 
         nutrition_goals = {
             "target_calories": round(target_calories),
-            "protein": round((target_calories * 0.3) / 4),
-            "carbs": round((target_calories * 0.4) / 4),
-            "fat": round((target_calories * 0.3) / 9),
+            "protein": round((target_calories * protein_ratio) / 4),
+            "carbs": round((target_calories * carbs_ratio) / 4),
+            "fat": round((target_calories * fat_ratio) / 9),
         }
 
-        # ✅ 식단 예시 조회
         example_sql = f"""
         SELECT breakfast, lunch, dinner
         FROM diet_plans
@@ -614,7 +642,6 @@ def recommend_diet_tool(params: dict) -> str:
         """
         example_data = execute_sql(example_sql)
 
-        # ✅ LLM 프롬프트 구성
         if period == "하루":
             plan_format = '"monday": {"아침": "...", "점심": "...", "저녁": "..."}'
         elif period == "일주일":
@@ -636,10 +663,19 @@ def recommend_diet_tool(params: dict) -> str:
         - 식사 패턴: {pattern}
         - 거부 음식: {avoidances}
         - 목표 영양소: {nutrition_goals}
+        - 주요 식품 예시: {example_foods}
+        [목표 식단의 식품군 기준]
+        - 단백질원: 육류(닭, 소), 생선, 두부, 달걀, 유제품 등
+        - 탄수화물원: 통곡물(현미, 귀리), 감자, 고구마, 과일 등
+        - 지방원: 견과류, 올리브유, 아보카도 등
+        - 채소류: 브로콜리, 시금치, 양배추 등
 
         [식단 예시]
         {example_data}
-
+        요청 조건]
+        - 식사는 가능한 한 **다양한 재료**를 사용해 반복을 줄여주세요.
+        - 예시 식품 목록 외에도 비슷한 영양 특성을 가진 식품으로 **대체 식품**도 활용해도 됩니다.
+        - 식사 시간대별 소화 부담도 반영해주세요 (예: 저녁은 가볍게).
         출력 형식(JSON):
         {{
           "scope": "{period}",
@@ -659,17 +695,12 @@ def recommend_diet_tool(params: dict) -> str:
         response = llm.invoke([HumanMessage(content=prompt)])
         plan_result = response.content.strip()
 
-        # ✅ 후처리
         raw_json = extract_json_block(plan_result)
         plan_json = json.loads(raw_json)
         json_text = extract_json_block(plan_result)
 
         if not plan_json.get("summary") or "0 kcal" in json.dumps(plan_json["summary"]):
-            summary = summarize_nutrition_tool.invoke({
-                "params": {
-                    "user_input": json_text
-                }
-            })
+            summary = summarize_nutrition_tool.invoke({"params": {"user_input": json_text}})
             plan_json["summary"] = json.loads(summary)
 
         feedback = diet_feedback_tool.invoke({
@@ -682,7 +713,6 @@ def recommend_diet_tool(params: dict) -> str:
         plan_json["feedback"] = json.loads(feedback)
         plan_json["nutrition_goals"] = nutrition_goals
 
-        # ✅ 식단 DB 저장
         save_result = save_recommended_diet.invoke({
             "params": {
                 "user_input": json.dumps(plan_json, ensure_ascii=False),
@@ -874,43 +904,67 @@ def user_profile_tool(params: dict) -> str:
     LIMIT 1;
     """
     return execute_sql(query)
+def infer_meal_type_from_time():
+    now = datetime.now().hour
+    if 5 <= now < 11:
+        return "아침"
+    elif 11 <= now < 16:
+        return "점심"
+    elif 16 <= now < 21:
+        return "저녁"
+    return None  # 새벽이나 야식
+
 @tool
 def meal_parser_tool(params: dict) -> str:
     """
-    자연어 식사 기록에서 음식명(여러 개), 양, 단위, 식사 시간/끼니 분류 등을 추출합니다.
+    자연어 식사 기록에서 음식명(복수), 양, 단위, 식사 시간/끼니, 그리고 g 기준 추정량까지 추출합니다.
     """
-    input_text = params.get("user_input", "")
+    from datetime import datetime
+    user_input = params.get("user_input", "")
+    now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    default_meal_type = infer_meal_type_from_time()
 
     prompt = f"""
     너는 식사 기록 분석기야.
-    다음 문장에서 식사 시간(meal_type), 음식 이름(food_name), 양(portion), 단위(unit)을 JSON으로 추출해줘.
 
-    [규칙]
-    - 음식 이름이 여러 개면 반드시 배열로 추출해 (예: ["고구마", "계란"])
-    - portion과 unit은 음식 전체 기준으로 평균값으로 추정해도 돼 (없으면 null로)
-    - meal_type은 아침/점심/저녁 중 하나로 추정해
-    - food_name은 문자열이 아닌 리스트로 추출할 것
+    입력된 문장에서 다음 항목을 추출해서 정확한 JSON 형태로 출력해줘.
+    만약 문장에 식사명이 직접 포함되지 않았다면, 시간 "{now_time}" 기준으로 다음을 적용해서 끼니를 정해줘:
 
-    입력:
-    {input_text}
+    - 05:00~10:59 → 아침
+    - 11:00~15:59 → 점심
+    - 16:00~21:00 → 저녁
+    - 그 외 시간은 기타
+
+    ⚠️ JSON만 출력하고, 설명 없이 순수 JSON 객체만 포함해야 해.
+    
+    입력 문장: "{user_input}"
+
+    추출 항목:
+    - meal_type: 아침 / 점심 / 저녁 중 하나 (또는 null)
+    - food_name: ["음식1", "음식2", ...]
+    - portion: [정수 또는 실수]
+    - unit: ["개", "공기", "g", ...]
+    - estimated_grams: [g 단위 추정량]
 
     출력 예시:
     {{
-      "meal_type": "아침",
-      "food_name": ["바나나", "요거트"],
-      "portion": null,
-      "unit": null
+      "meal_type": "{default_meal_type}",
+      "food_name": ["닭가슴살", "현미밥"],
+      "portion": [1, 1],
+      "unit": ["개", "공기"],
+      "estimated_grams": [150, 200]
     }}
     """
+
     response = llm.invoke([HumanMessage(content=prompt)])
     return response.content.strip()
+
 @tool
 def save_recommended_diet(params: dict) -> str:
     """
     추천된 식단(JSON)을 recommended_diet_plans 테이블에 저장
     """
     try:
-        # ✅ JSON 문자열 또는 dict 모두 처리
         user_input = params.get("user_input", "{}")
         if isinstance(user_input, dict):
             plan = user_input
@@ -918,42 +972,54 @@ def save_recommended_diet(params: dict) -> str:
             plan = json.loads(user_input)
 
         member_id = params.get("member_id", 1)
-
-        day = plan.get("scope", "daily")
-        plan_json = plan.get("plan", {})
-        summary = plan.get("summary", {})
+        scope = plan.get("scope", "하루")
         comment = plan.get("comment", "")
+        raw_plan = plan.get("plan", {})
 
-        # PostgreSQL 저장
-        conn = psycopg2.connect(PG_URI)
-        cur = conn.cursor()
+        plan_json = {}
 
-        if day == "한끼":
-            meal = plan_json.get("meal", "")
-            cur.execute("""
-                INSERT INTO recommended_diet_plans 
-                (member_id, plan_scope, plan_summary, breakfast_plan, lunch_plan, dinner_plan, plan_day)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (member_id, day, comment, meal, "", "", "single"))
+        if scope == "한끼":
+            meal_plan = raw_plan.get("meal", {})
+            # 한끼니까 실제로 한 끼만 보내야 함
+            for meal_key in ["breakfast", "lunch", "dinner", "아침", "점심", "저녁"]:
+                if meal_key in meal_plan:
+                    # 예: "single": { "아침": "...한끼..." }
+                    plan_json = {"single": {meal_key: meal_plan[meal_key]}}
+                    break  # 하나만 보내야 하므로 break
+                            
+        elif scope == "하루":
+            if "monday" in raw_plan:
+                plan_json = raw_plan
+            else:
+                plan_json = {
+                    "monday": {
+                        "아침": raw_plan.get("breakfast", "") or raw_plan.get("아침", ""),
+                        "점심": raw_plan.get("lunch", "") or raw_plan.get("점심", ""),
+                        "저녁": raw_plan.get("dinner", "") or raw_plan.get("저녁", "")
+                    }
+                }
+
+        elif scope == "일주일":
+            # 일주일 → 이미 요일별로 구성된 dict 그대로 사용
+            plan_json = raw_plan
+
         else:
-            for day_name, meals in plan_json.items():
-                breakfast = meals.get("아침", "")
-                lunch = meals.get("점심", "")
-                dinner = meals.get("저녁", "")
-                cur.execute("""
-                    INSERT INTO recommended_diet_plans 
-                    (member_id, plan_scope, plan_summary, breakfast_plan, lunch_plan, dinner_plan, plan_day)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (member_id, day, comment, breakfast, lunch, dinner, day_name))
+            return f"❌ 지원하지 않는 scope: {scope}"
 
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return "✅ 추천 식단 저장 완료"
+        save_result = call_spring_api(
+            endpoint="/api/food/recommended-diet-plan",
+            data={
+                "memberId": member_id,
+                "planScope": scope,
+                "planSummary": comment,
+                "planJson": plan_json
+            }
+        )
+        return f"✅ 추천 식단 저장 완료\n{json.dumps(plan_json, ensure_ascii=False, indent=2)}"
 
     except Exception as e:
-        return f"❌ 저장 실패: {e}"
+        return f"❌ 저장 실패: {str(e)}"
+
 
 @tool
 def diet_explanation_tool(params: dict) -> str:
@@ -1223,8 +1289,14 @@ def search_food_tool(params: dict) -> str:
     return result
 def extract_json_block(text: str) -> str:
     import re
-    match = re.search(r"```json\s*(.*?)```", text, re.DOTALL)
-    return match.group(1).strip() if match else text.strip()
+    if not text.strip():
+        return ""
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    if text.strip().startswith("{") and text.strip().endswith("}"):
+        return text.strip()
+    return ""
 
 def check_duplicate_meal_via_sql(member_id: int, food_name: str, meal_type: str) -> bool:
     query = f"""
@@ -1293,71 +1365,295 @@ def get_meal_records_tool(params: dict) -> str:
 @tool
 def record_meal_tool(params: dict) -> str:
     """
-    사용자의 식사 입력을 파싱하여 여러 음식 항목을 분리하고,
-    각 항목에 대해 영양 정보를 조회한 뒤 식사 기록을 저장합니다.
+    자연어 식사 입력을 분석하여 여러 음식의 영양 정보를 조회하고, g 기준으로 환산하여 식사 기록을 저장하고 영양소 요약도 반환합니다.
     """
     try:
-        user_input = params.get("user_input") or params.get("input", "")
-        member_id = params.get("member_id", 1)
+        import traceback
 
-        # 🥣 LLM 기반 식사 파싱
+        # ✅ LangChain Tool 구조 대응
+        inner = params.get("params", params)
+        user_input = inner.get("input") or inner.get("user_input", "")
+        member_id = inner.get("member_id", 1)
+
+        # ✅ 식사 내용 파싱
         parsed = meal_parser_tool.invoke({"params": {"user_input": user_input}})
-        parsed_json = json.loads(extract_json_block(parsed))
+        json_block = extract_json_block(parsed)
+        if not json_block:
+            return f"❌ LLM 식사 파싱 결과 없음\n🧾 원문: {parsed}"
+        parsed_json = json.loads(json_block)
 
         meal_type = parsed_json.get("meal_type")
         food_names = parsed_json.get("food_name", [])
-        if isinstance(food_names, str):
-            food_names = [food_names]  # 문자열이면 리스트로 변환
-
-        portion = parsed_json.get("portion", 100) or 100
-        unit = parsed_json.get("unit", "g") or "g"
+        portions = parsed_json.get("portion", [])
+        units = parsed_json.get("unit", [])
+        estimated_grams = parsed_json.get("estimated_grams", [])
 
         results = []
 
-        for food_name in food_names:
-            # 🔍 각 음식 영양정보 조회
-            nutrition_json = lookup_nutrition_tool.invoke({"params": {"user_input": food_name}})
-            nutrition_data = json.loads(extract_json_block(nutrition_json))
+        total_calories = 0
+        total_protein = 0
+        total_carbs = 0
+        total_fat = 0
 
-            factor = portion / 100
-            calories = round(nutrition_data["calories"] * factor, 1)
-            protein = round(nutrition_data["protein"] * factor, 1)
-            carbs = round(nutrition_data["carbs"] * factor, 1)
-            fat = round(nutrition_data["fat"] * factor, 1)
+        for i, food in enumerate(food_names):
+            portion = portions[i] if i < len(portions) else 1
+            unit = units[i] if i < len(units) else "g"
+            grams = estimated_grams[i] if i < len(estimated_grams) else 100
 
-            # ✅ 중복 체크 및 저장
-            # is_duplicate = check_duplicate_meal_via_sql(member_id, food_name, meal_type)
-            print(member_id, food_name, meal_type)
-            print(portion, unit)
-            print(calories, protein, carbs, fat)
-            print(results)  
+            # ✅ 음식별 영양 정보 추출
+            nutrition_json = lookup_nutrition_tool.invoke({"params": {"user_input": food}})
+            
+            # Check if we received valid nutrition data
+            if not nutrition_json:
+                results.append({
+                    "status": "❌ 영양 정보 없음",
+                    "food": food,
+                    "reason": "영양 정보 조회 실패"
+                })
+                continue
+            
+            # Try parsing the nutrition data
+            try:
+                nutrition_data = json.loads(extract_json_block(nutrition_json))
+            except Exception as e:
+                results.append({
+                    "status": "❌ 영양 정보 파싱 실패",
+                    "food": food,
+                    "reason": f"JSON 파싱 오류: {str(e)}"
+                })
+                continue
+
+            if not nutrition_data:
+                results.append({
+                    "status": "❌ 영양 정보 없음",
+                    "food": food,
+                    "reason": "영양 정보가 비어 있음"
+                })
+                continue
+
+            factor = grams / 100
+            calories = round(nutrition_data.get("calories", 0) * factor, 1)
+            protein = round(nutrition_data.get("protein", 0) * factor, 1)
+            carbs = round(nutrition_data.get("carbs", 0) * factor, 1)
+            fat = round(nutrition_data.get("fat", 0) * factor, 1)
+
+            # ✅ 총합 계산
+            total_calories += calories
+            total_protein += protein
+            total_carbs += carbs
+            total_fat += fat
+
             meal_data = {
                 "memberId": member_id,
-                "foodName": food_name,
+                "foodName": food,
                 "mealType": meal_type,
-                "portion": float(portion),
-                "unit": unit,
+                "portion": float(portion),  # ✅ 사용자가 말한 수량
+                "unit": unit,               # ✅ '개', '컵' 등 단위명 유지
                 "calories": calories,
                 "protein": protein,
                 "carbs": carbs,
-                "fat": fat
+                "fat": fat,
+                "estimated_grams": grams
             }
-            print(meal_data)
-            api_result = call_spring_api("/api/food/insert-meal", meal_data, "POST")
-            status = "✅ 신규 기록 저장"
-            print(api_result)
+
+            # ✅ Spring API로 저장
+            api_result = call_spring_api("/api/food/insert-meal", meal_data)
+            status = "✅ 저장 완료" if api_result and "error" not in str(api_result).lower() else "❌ 저장 실패"
+
             results.append({
                 "status": status,
-                "food": food_name,
-                "calories": api_result
+                "food": food,
+                "grams": grams,
+                "calories": calories,
+                "api_result": api_result
             })
 
-        return json.dumps(results, ensure_ascii=False, indent=2)
+        if not results:
+            return json.dumps({"status": "❌ 결과 없음", "reason": "음식 분석 결과 없음"}, ensure_ascii=False)
+
+        summary = {
+            "총칼로리": round(total_calories, 1),
+            "단백질": round(total_protein, 1),
+            "탄수화물": round(total_carbs, 1),
+            "지방": round(total_fat, 1)
+        }
+
+        return json.dumps({
+            "meal_records": results,
+            "nutrition_summary": summary
+        }, ensure_ascii=False, indent=2)
 
     except Exception as e:
         return f"❌ 저장 실패: {str(e)}\n{traceback.format_exc()}"
+@tool
+def answer_general_nutrition_tool(params: dict) -> str:
+    """
+    하루 권장량, 영양소 기준 등 일반 영양 정보를 LLM과 웹검색을 통해 설명합니다.
+    """
+    question = params.get("input") or params.get("question", "")
+    tavily_response = TavilySearchAPIRetriever(question);
+    web_summary = tavily_response.content
+    
+    prompt = f"""
+    아래 질문에 대해 한국인 기준으로 정확한 영양 정보 기준으로 답변해줘.
+    웹검색 결과: {web_summary}
+    를 토대로 하여 질문에 대한 답변을 작성해줘.
+    질문: {question}
+    """
+    return llm.invoke([HumanMessage(content=prompt)]).content.strip()
+ 
+@tool 
+def smart_nutrition_resolver(params: dict) -> str: 
+    """ 
+    사용자의 영양/식단 관련 질문에 대해 자동으로 SQL/웹검색/LLM 응답을 판단 및 실행하고, 
+    confidence가 낮을 경우 재판단까지 포함하여 최적의 결과를 반환합니다. 
+    """ 
+    try: 
+        question = params.get("input") or params.get("question", "")
+        member_id = params.get("member_id", 1) 
+        table_info = json.dumps(table_schema, ensure_ascii=False)
 
+        def run_decision(prompt: str) -> dict:
+            raw = llm.invoke([HumanMessage(content=prompt)]).content
+            return json.loads(extract_json_block(raw))
 
+        # Step 1: 응답 방식 판단
+        decision_prompt = f"""
+        너는 지능형 식단 응답 판단기야.
+        사용자 질문을 보고 아래 중 어떤 응답 방식이 가장 적절한지 판단해줘.
+
+        [선택지]
+        - "sql": 질문이 DB에 저장된 정보를 기반으로 답변해야 하는 경우
+        - "search": 최신 정보나 외부 지식이 필요한 경우
+        - "llm": 일반 상식이나 유추 가능한 경우, LLM만으로 충분한 경우
+
+        [출력 형식]
+        - action: 선택한 방식 (sql / search / llm 중 하나)
+        - reason: 왜 그렇게 판단했는지 간결한 설명
+        - confidence: 확신 정도 (0 ~ 1 float)
+
+        [테이블 스키마]
+        {table_info}
+
+        [사용자 질문]
+        "{question}"
+
+        [출력 예시]
+        {{
+        "action": "sql",
+        "reason": "알레르기 정보는 DB에 저장된 사용자 데이터를 조회해야 하기 때문",
+        "confidence": 0.92
+        }}
+        """
+
+        decision = run_decision(decision_prompt)
+        action = decision.get("action")
+        reason = decision.get("reason", "")
+        confidence = float(decision.get("confidence", 1.0))
+
+        # 낮은 확신이면 1회 재시도
+        if confidence < 0.7:
+            retry = run_decision(decision_prompt)
+            action = retry.get("action")
+            reason = retry.get("reason", "")
+            confidence = float(retry.get("confidence", 1.0))
+
+            if confidence < 0.7:
+                action = "llm"
+                reason += " (신뢰도 낮아 LLM 응답으로 fallback)"
+
+        print(f"🧠 판단 결과: {action} | 이유: {reason} | 신뢰도: {confidence}")
+
+        intermediate_result = ""
+        data_source = ""
+
+        if action == "sql":
+            sql_prompt = f"""
+            너는 SQL 생성 전문가야. 아래 기준을 철저히 지켜서 SQL SELECT 문을 만들어줘.
+
+            [사용자 질문]
+            "{question}"
+
+            [제약 조건]
+            1. 반드시 SQL SELECT 문 하나만 출력해. 설명이나 주석은 절대 금지.
+            2. WHERE 절에 반드시 "member_id = {member_id}" 조건을 포함해야 해.
+            3. 필요한 컬럼만 선택하고, * 사용 금지.
+            4. 조인은 꼭 필요할 때만 써.
+            5. 테이블 스키마 외 테이블은 사용 금지.
+
+            [테이블 스키마]
+            {table_info}
+            """
+            sql = llm.invoke([HumanMessage(content=sql_prompt)]).content.strip()
+            result = execute_sql(sql)
+            intermediate_result = json.dumps(result, ensure_ascii=False)
+            data_source = "sql"
+
+        elif action == "search":
+            search_result = TavilySearchAPIRetriever.invoke(question)
+            summary_prompt = f"""
+            [사용자 질문]
+            {question}
+
+            [검색 결과]
+            {search_result}
+
+            위 내용을 바탕으로 요약 + 설명 + 링크를 포함한 응답을 자연스럽게 작성해줘.
+            """
+            refined = llm.invoke([HumanMessage(content=summary_prompt)]).content.strip()
+            return json.dumps({
+                "source": "web",
+                "final_answer": refined,
+                "reason": reason,
+                "confidence": confidence
+            }, ensure_ascii=False, indent=2)
+
+        elif action == "llm":
+            llm_prompt = f"""
+            너는 식단/영양 전문가야.
+            아래 질문에 대해 한국 기준(KDRI 등)으로 정리된 구조화된 응답을 해줘.
+
+            [질문]
+            {question}
+
+            [응답 양식]
+            1. 📌 질문 요약
+            2. 📊 한국 기준 정리
+            3. 🧠 전문가 설명
+            4. 🔍 정보 출처
+
+            ⚠️ 기준이 없으면 "일반적인 경향"으로 설명해줘.
+            """
+            refined = llm.invoke([HumanMessage(content=llm_prompt)]).content.strip()
+            return json.dumps({
+                "source": "llm",
+                "final_answer": refined,
+                "reason": reason,
+                "confidence": confidence
+            }, ensure_ascii=False, indent=2)
+
+        # Step 3: 정제 응답
+        refine_prompt = f"""
+        사용자 질문: {question}
+        중간 결과:
+        {intermediate_result}
+
+        위 정보를 바탕으로 한국 기준으로 자연스럽고 정확한 식단/영양 응답을 작성해줘.
+        """
+        refined = llm.invoke([HumanMessage(content=refine_prompt)]).content.strip()
+
+        return json.dumps({
+            "source": data_source,
+            "final_answer": refined,
+            "reason": reason,
+            "confidence": confidence
+        }, ensure_ascii=False, indent=2)
+
+    except Exception as e:
+        return json.dumps({
+            "status": "❌ 오류 발생",
+            "error": str(e)
+        }, ensure_ascii=False, indent=2)
 
 tool_list = [
     record_meal_tool,
@@ -1385,6 +1681,7 @@ tool_list = [
     meal_parser_tool,
     save_user_goal_and_diet_info,
     get_meal_records_tool,
-    
+    answer_general_nutrition_tool,
+    smart_nutrition_resolver,
 ]
  

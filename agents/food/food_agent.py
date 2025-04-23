@@ -48,7 +48,7 @@ class FoodAgent(BaseModel):
                 # run_super_agent를 통해 chain 실행
                 response = await run_super_agent(
                     message, 
-                    member_id=user_id,
+                    member_id=int(user_id),
                     user_info=user_info
                 )
                 
