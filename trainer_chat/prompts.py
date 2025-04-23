@@ -1,8 +1,3 @@
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
-from .tools import db_query_tool
-from pydantic import BaseModel, Field
-
 query_check_system = """You are a SQL expert with a strong attention to detail.
 Double check the PostgreSQL query for common mistakes, including:
 - Using NOT IN with NULL values
@@ -18,13 +13,6 @@ If there are any of the above mistakes, rewrite the query. If there are no mista
 
 You will call the appropriate tool to execute the query after running this check."""
 
-query_check_prompt = ChatPromptTemplate.from_messages([
-    ("system", query_check_system), ("placeholder", "{messages}")
-])
-query_check = query_check_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools(
-    [db_query_tool], tool_choice="required"
-)
-
 query_gen_system = """You are a SQL expert with a strong attention to detail.
 
 Given an input question, output a syntactically correct PostgreSQL query to run, then look at the results of the query and return the answer.
@@ -37,12 +25,156 @@ Never query for all the columns from a specific table, only ask for the relevant
 
 DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database."""
 
-query_gen_prompt = ChatPromptTemplate.from_messages([
-    ("system", query_gen_system), ("placeholder", "{messages}")
-])
+time_range_extraction_prompt = """
+You are a time range extraction assistant.
 
-class SubmitFinalAnswer(BaseModel):
-    """Submit the final answer to the user based on the query results."""
-    final_answer: str = Field(..., description="The final answer to the user")
+Your task is to extract the start and end time expressions from the user's input.
 
-query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0)
+## Instructions:
+- Carefully identify any relative or natural language time expressions in the input.
+- For each expression, expand it into a complete time range.
+  - Use "00:00:00" as the start of the day.
+  - Use "23:59:59" as the end of the day.
+  - If the expression refers to a **week**, expand it to:
+    - "<expression> 월요일 00:00:00" to "<expression> 일요일 23:59:59"
+  - If the expression refers to a **month**, expand it to:
+    - "<expression> 1일 00:00:00" to "<expression> 마지막 날 23:59:59"
+  - If the expression includes time-of-day terms, apply the following:
+    - "오전" → 00:00:00 to 11:59:59
+    - "오후" → 12:00:00 to 23:59:59
+    - "저녁" → 18:00:00 to 23:59:59
+    - "밤"   → 21:00:00 to 23:59:59
+                               
+- Return the output in JSON format with the exact natural language expressions used by the user, with time strings appended.
+
+## Output format:
+{{
+  "start": "<start expression with time>",
+  "end": "<end expression with time>"
+}}
+
+User input: "{user_input}"
+Output:
+"""
+
+time_range_extraction_prompt2 = """
+You are a highly detail-oriented language model specialized in natural language time expression parsing.
+
+Your task is to extract and structure the relative time expression found in the user's input into a detailed JSON format that can later be converted into absolute time (e.g., ISO 8601).
+
+## Input
+A single user message in natural language that may contain a relative time expression in Korean.
+
+## Output
+A JSON object with the following possible fields:
+- expression: The original natural language expression that refers to time.
+- type: Either "point" (a single moment) or "range" (a time interval).
+- time_unit: The most relevant time unit (e.g., "year", "half-year", "quarter", "month", "week", "day", "hour", "minute").
+- direction: If applicable, indicates relative direction — "past", "future", or "current".
+- offset: If applicable, a numeric offset from the current time (e.g., 3 days ago → 3).
+- granularity: The smallest meaningful unit to consider when computing the time span.
+- start_expression: If the input includes a range, the natural language start point.
+- end_expression: If the input includes a range, the natural language end point.
+- nested_reference: For phrases like "다음달 첫째 주", an object with parent_unit and position.
+- range_within_day: For intra-day expressions like "오늘 오전", include start_hour and end_hour.
+
+## Constraints
+- Do not generate absolute time values.
+- Do not include timezone or base_time information.
+- The output should be parseable and consistent with the defined schema.
+
+## User Input
+'{user_input}'
+
+## Output
+Return **only** a valid JSON object with relevant fields from the list below. Omit fields that are empty or not applicable.
+"""
+
+extract_time_expression_prompt = """
+You are a natural language understanding assistant that extracts structured time information from user input.
+
+## Input
+User input: '{user_input}'
+
+## Task
+Analyze the input and extract the meaning of any time expressions.
+Your response must be a valid JSON object only — no explanations, no formatting, and no extra text.
+If a value cannot be determined, return null.
+
+## Output Fields
+
+- direction: "past", "future", or "current"
+  Indicates whether the expression refers to the past, future, or present.
+
+- time_unit: "year", "quarter", "month", "week", "day", "hour", "minute", or null
+  The main unit of time being referred to at the top level.
+
+- steps: an array of objects, each representing a level of time granularity within the expression.
+  Each step includes:
+  - granularity: "year", "quarter", "month", "week", "day", "hour", "minute"
+    The unit of time for this step.
+  - offset: number | null
+    The relative position from the base unit (e.g., 0 = current, 1 = next, -1 = previous)
+
+## Output
+Return a single JSON object with all the fields above.
+Do not include any explanations, markdown, or comments. Only return the JSON object itself.
+"""
+
+time_range_to_sql_prompt = """
+# Role
+You are a SQL expert with a strong attention to detail.
+Your task is to analyze Korean natural language expressions about time and convert them into precise time range filters.
+These filters will be used to construct WHERE clauses in SQL queries for time-based filtering.
+
+## Context
+- Current datetime (ISO 8601): {current_datetime}
+- User timezone (IANA format): {user_timezone}
+- Database engine: {db_engine}
+
+## Input
+A single Korean sentence that describes a time period or time range.
+
+## Output Format
+Return exactly one valid JSON object with no markdown, examples, or extra text, using the following structure:
+{{
+  "expression": string,           // Original user input
+  "start_expression": string,     // Natural language representation of the start
+  "end_expression": string,       // Natural language representation of the end
+  "sql_start_expr": string,       // SQL expression for the inclusive start time
+  "sql_end_expr": string          // SQL expression for the exclusive end time (start of next unit)
+}}
+
+## Definitions
+- A time range is a half-open interval: start_time <= x < end_time.
+- A day is defined as 00:00:00 to 00:00:00 of the next day.
+- A week starts on Monday (DOW = 1).
+- The first week of a month is the one that includes the 1st day of the month.
+- current_datetime is the reference point for interpreting relative expressions.
+- DATE_TRUNC('day', current_datetime) is used to resolve full-day expressions like "오늘", "내일", "어제".
+- Time periods like "오전", "오후", "저녁", "밤" follow these ranges:
+  - "오전": 00:00:00 ~ 12:00:00
+  - "오후": 12:00:00 ~ 00:00:00 of the next day
+  - "저녁": 18:00:00 ~ 00:00:00 of the next day
+  - "밤": 21:00:00 ~ 00:00:00 of the next day
+
+## Rules
+- Use second-level precision only. Do not include milliseconds.
+- Use SQL functions consistently based on the type of time expression:
+  - Use DATE_TRUNC(...) for relative expressions like "이번주", "지난달", "어제".
+  - Use TIMESTAMP 'YYYY-MM-DD HH:MM:SS' for fixed absolute dates like "6월 1일".
+  - Use CURRENT_TIMESTAMP for "지금", "오늘 남은" or present-based expressions.
+- If both relative and absolute expressions are present, normalize them using the current reference time before SQL generation.
+- Weekday expressions (e.g., "금요일") must be computed using:
+  `DATE_TRUNC('week', ...) + INTERVAL 'n days'`
+- Apply `AT TIME ZONE '{user_timezone}'` exactly once per SQL expression (for both sql_start_expr and sql_end_expr independently).
+- sql_end_expr must be the 00:00:00 time of the next day/week/month.
+- All fixed absolute time points must use TIMESTAMP 'YYYY-MM-DD HH:MM:SS' format.
+- If a period like "5일" is mentioned without a direction, infer the direction using the context of the full expression. Default to the future **only if no contextual clue is available.**
+- Expressions like "오늘 남은" must start from current_datetime and end at the end of today.
+- If the range ends on a fixed date (e.g., "6월 10일"), sql_end_expr must be the **start of the next day** (e.g., "6월 11일 00:00:00").
+- Do not include examples, explanations, or markdown. Output only the valid JSON object.
+
+## User Input
+"{user_input}"
+"""
