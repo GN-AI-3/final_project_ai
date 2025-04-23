@@ -22,8 +22,7 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
 ✅ "단백질 많은 음식 추천해줘", "고단백 음식 뭐 있어?" 와 같은 입력은
 → 음식 리스트 추천인지, 하루 식단 추천인지 명확히 판단해야 해.
 
-- "단백질 많은 음식", "단백질이 많은 식품", "고단백 음식 추천"과 같이 **리스트가 목적**이면
-→ `recommend_nutritious_food_tool` 실행
+ 
 
 - "단백질 위주로 먹고 싶은데", "고단백 식단 추천해줘", "단백질 위주 식단 짜줘"처럼 **식단 구성이 목적**이면
 → `recommend_diet_tool` 실행 (goal을 고단백으로 판단)
@@ -148,7 +147,7 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
     - "필요한 양"
     - "영양소 비교"
     - "비타민 A 기준"
-[10. 특정 조건에 맞는 음식 추천 요청이면 → recommend_nutritious_food_tool 실행]
+[10. 특정 조건에 맞는 음식 추천 요청이면 → smart_nutrition_resolver 실행]
 - 키워드 예시: 
     - "단백질 많은 음식"
     - "고단백 음식"

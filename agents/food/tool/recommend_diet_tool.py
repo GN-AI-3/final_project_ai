@@ -1501,43 +1501,7 @@ def answer_general_nutrition_tool(params: dict) -> str:
     질문: {question}
     """
     return llm.invoke([HumanMessage(content=prompt)]).content.strip()
-@tool
-def recommend_nutritious_food_tool(params: dict) -> str:
-    """
-    고단백, 저염, 고비타민 음식 등 조건에 맞는 건강 식품 리스트를 웹 검색과 LLM 기반으로 추천합니다.
-    """
-
-    try:
-        question = params.get("input") or params.get("question", "")
-        if not question:
-            return "❌ 입력 질문이 비어 있습니다."
-
-        # ✅ Step 1: 웹 검색
-        retriever = TavilySearchAPIRetriever(k=3, tavily_api_key=os.getenv("TAVILY_API_KEY"))
-        web_summary = retriever.invoke(question)
-
-        # ✅ Step 2: LLM 요약 및 추천
-        prompt = f"""
-        사용자가 요청한 질문: "{question}"
-
-        아래 웹 검색 결과를 참고하여
-        - 음식 이름을 항목별로 추천하고
-        - 각 항목에 대해 한국 기준의 주요 영양소 또는 효능을 간단히 요약해줘.
-
-        [웹 검색 요약]
-        {web_summary}
-        """
-        llm_response = llm.invoke([HumanMessage(content=prompt)]).content.strip()
-
-        return json.dumps({
-            "question": question,
-            "llm_answer": llm_response,
-            "web_summary": web_summary,
-            "source": "web + llm"
-        }, ensure_ascii=False, indent=2)
-
-    except Exception as e:
-        return f"❌ 음식 추천 실패: {str(e)}"
+ 
 @tool 
 def smart_nutrition_resolver(params: dict) -> str: 
     """ 
@@ -1626,7 +1590,7 @@ def smart_nutrition_resolver(params: dict) -> str:
             data_source = "sql"
 
         elif action == "search":
-            search_result = TavilySearchAPIRetriever.invoke({"params": {"input": question}})
+            search_result = TavilySearchAPIRetriever.invoke(question)
             summary_prompt = f"""
             [사용자 질문]
             {question}
@@ -1718,7 +1682,6 @@ tool_list = [
     save_user_goal_and_diet_info,
     get_meal_records_tool,
     answer_general_nutrition_tool,
-    recommend_nutritious_food_tool,
     smart_nutrition_resolver,
 ]
  
