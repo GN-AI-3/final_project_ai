@@ -73,7 +73,7 @@ def time_expression_to_sql(user_input: str) -> dict:
     return { "sql_start_expr": result["sql_start_expr"], "sql_end_expr": result["sql_end_expr"] }
 
 class TimeExpressionInput(BaseModel):
-    user_input: str = Field(..., description="human 메세지 전체")
+    user_input: str
 
 time_expression_to_sql_tool = Tool.from_function(
     name="time_expression_to_sql",
@@ -102,6 +102,49 @@ query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bi
     [time_expression_to_sql_tool], 
     tool_choice="required"
 )
+
+def get_pt_schedule(data: dict | str) -> str:
+    """
+    Get the PT schedule for the given trainer.
+    - `user_input`: The user's input message.
+    - `trainer_id`: The ID of the trainer.
+    """
+
+    # 💥 여기서 str이면 dict로 파싱해주기
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError as e:
+            return f"JSON 디코딩 오류: {str(e)}"
+
+    user_input = data.get("user_input")
+    trainer_id = data.get("trainer_id")
+
+    query = f"""
+SELECT
+    ps.id,
+    ps.start_time,
+    ps.end_time,
+    ps.status,
+    ps.reason,
+    m.name AS member_name,
+    pc.id AS contract_id
+FROM pt_schedule ps
+         JOIN pt_contract pc ON ps.pt_contract_id = pc.id
+         JOIN member m ON pc.member_id = m.id
+WHERE ps.is_deleted = false
+    AND pc.trainer_id = {trainer_id}
+ORDER BY ps.start_time;
+    """
+
+    result = db.run_no_throw(query)
+
+    print("get_pt_schedule result: ", result)
+
+    if not result:
+        return "Error: Query failed. Please rewrite your query and try again."
+
+    return result
 
 if __name__ == "__main__":
     test_cases = [

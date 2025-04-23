@@ -71,6 +71,10 @@ def query_gen_node(state: State):
 model_get_schema = ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools([
     get_schema_tool
 ])
+
+model_gen_time_query = ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools([
+    time_expression_to_sql_tool
+])
    
 def should_continue(state: State) -> Literal["query_gen", "execute_query"]:
     messages = state["messages"]
@@ -88,6 +92,13 @@ workflow.add_node(
         "messages": [model_get_schema.invoke(state["messages"])],
     },
 )
+workflow.add_node("get_time_query_tool", create_tool_node_with_fallback([time_expression_to_sql_tool]))
+workflow.add_node(
+    "model_gen_time_query",
+    lambda state: {
+        "messages": [model_gen_time_query.invoke(state["messages"])],
+    },
+)
 
 workflow.add_node("query_gen", query_gen_node)
 workflow.add_node("correct_query", model_check_query)
@@ -101,7 +112,8 @@ workflow.add_node("finalize_answer", lambda state: {
 
 workflow.add_edge(START, "first_tool_call")
 workflow.add_edge("first_tool_call", "get_schema_tool")
-workflow.add_edge("get_schema_tool", "query_gen")
+workflow.add_edge("get_schema_tool", "get_time_query_tool")
+workflow.add_edge("get_time_query_tool", "query_gen")
 workflow.add_edge("query_gen", "correct_query")
 
 workflow.add_conditional_edges(
