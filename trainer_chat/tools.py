@@ -9,7 +9,7 @@ import datetime
 import dateparser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
-from .prompts import query_check_system, query_gen_system, time_range_extraction_prompt, extract_time_expression_prompt, time_range_to_sql_prompt
+from .prompts import query_gen_system, query_check_system, time_range_to_sql_prompt
 import json
 
 toolkit = SQLDatabaseToolkit(db=db, llm=ChatOpenAI(model="gpt-4o-mini"))
@@ -48,9 +48,12 @@ def time_expression_to_sql_tool(user_input: str) -> dict:
     """
     from langchain.prompts import PromptTemplate
 
-    prompt = PromptTemplate.from_template(time_range_to_sql_prompt)
+    tz = pytz.timezone("Asia/Seoul")
+    now = datetime.datetime.now(tz)
+
+    time_range_prompt = PromptTemplate.from_template(time_range_to_sql_prompt)
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    range_response = llm.invoke(prompt.format(
+    range_response = llm.invoke(time_range_prompt.format(
         user_input=user_input,
         current_datetime=now.isoformat(),
         user_timezone=tz.zone,
@@ -60,122 +63,9 @@ def time_expression_to_sql_tool(user_input: str) -> dict:
     try:
         result = json.loads(range_response.content)
     except Exception as e:
-        return {"error": f"LLM 응답 파싱 실패: {e}", "raw": range_response.content}
+        return "Error: LLM 응답 파싱 실패"
     
-    
-
-    return result
-
-tz = pytz.timezone("Asia/Seoul")
-now = datetime.datetime.now(tz)
-
-def date_parser(expression: str) -> dict:
-    from dateparser import parse
-    
-    TIMEZONE = "Asia/Seoul"
-    
-    return parse(expression, settings={
-        'DATE_ORDER': 'YMD',
-        'TIMEZONE': TIMEZONE,
-        'TO_TIMEZONE': TIMEZONE,
-        'PREFER_DAY_OF_MONTH': 'current', # current, first, last
-        'PREFER_MONTH_OF_YEAR': 'current', # current, first, last
-        'PREFER_DATES_FROM': 'future', # past, future, current
-        'RELATIVE_BASE': now,
-        'STRICT_PARSING': False,
-    }, languages=['ko'])
-    
-
-def parse_relative_range(expression: str, now_iso: str) -> dict:
-    """
-    상대적 시간 범위 표현을 받아 절대적 시작/끝 날짜(ISO8601)와 기타 정보를 dict로 반환합니다.
-    """
-
-    import re
-    import pytz
-    import dateparser
-    from datetime import datetime, timedelta
-    from dateutil.relativedelta import relativedelta
-    from copy import deepcopy
-
-    cleaned_expression = expression.replace(" ", "")
-
-    # 공통 설정 - 함수 내 재사용
-    TIMEZONE = "Asia/Seoul"
-    LANGUAGES = ["ko"]
-    BASE_SETTINGS = {
-        "TIMEZONE": TIMEZONE,
-        "TO_TIMEZONE": TIMEZONE,
-        "RETURN_AS_TIMEZONE_AWARE": False,
-        "PREFER_DATES_FROM": "future",
-        "DATE_ORDER": "YMD",
-    }
-
-    # 기준 시간 설정
-    tz = pytz.timezone(TIMEZONE)
-    now = datetime.fromisoformat(now_iso).astimezone(tz)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    weekday = today.weekday()
-
-    def get_settings():
-        s = deepcopy(BASE_SETTINGS)
-        s["RELATIVE_BASE"] = now
-        return s
-
-    def to_range(dt: datetime) -> tuple[datetime, datetime]:
-        start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-        return start, start + timedelta(days=1)
-
-    def to_iso(start, end):
-        return {
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "expression": cleaned_expression,
-            "timezone": TIMEZONE,
-        }
-
-    # 주/월 단위 처리
-    if cleaned_expression in ["이번주"]:
-        start = today - timedelta(days=weekday)
-        end = start + timedelta(days=7)
-        return to_iso(start, end)
-
-    if cleaned_expression in ["다음주"]:
-        start = today - timedelta(days=weekday) + timedelta(weeks=1)
-        end = start + timedelta(days=7)
-        return to_iso(start, end)
-
-    if cleaned_expression in ["이번달"]:
-        start = today.replace(day=1)
-        next_month = (start + relativedelta(months=1)).replace(day=1)
-        return to_iso(start, next_month)
-
-    if cleaned_expression in ["다음달"]:
-        start = (today.replace(day=1) + relativedelta(months=1))
-        end = (start + relativedelta(months=1))
-        return to_iso(start, end)
-
-    # 범위 표현
-    range_parts = re.split(r"\s*[~\-]\s*|\s+to\s+", cleaned_expression)
-    if len(range_parts) == 2:
-        settings = get_settings()
-        start_dt = dateparser.parse(range_parts[0], settings=settings, languages=LANGUAGES)
-        end_dt = dateparser.parse(range_parts[1], settings=settings, languages=LANGUAGES)
-        if start_dt and end_dt:
-            start = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
-            end = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-            return to_iso(start, end)
-
-    # 단일 표현
-    parsed = dateparser.parse(cleaned_expression, settings=get_settings(), languages=LANGUAGES)
-    if parsed:
-        start, end = to_range(parsed)
-        return to_iso(start, end)
-
-    return {
-        "error": "Error: 변환할 수 없는 시간 표현입니다.",
-        "expression": expression
-    }
+    return { "sql_start_expr": result["sql_start_expr"], "sql_end_expr": result["sql_end_expr"] }
 
 query_check_prompt = ChatPromptTemplate.from_messages([
     ("system", query_check_system), ("placeholder", "{messages}")
@@ -190,7 +80,10 @@ class SubmitFinalAnswer(BaseModel):
     """Submit the final answer to the user based on the query results."""
     final_answer: str = Field(..., description="The final answer to the user")
 
-query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0)
+query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools(
+    [time_expression_to_sql_tool], 
+    tool_choice="required"
+)
 
 if __name__ == "__main__":
     test_cases = [

@@ -3,8 +3,7 @@ from langgraph.graph.message import AnyMessage, add_messages
 from langchain_core.messages import AIMessage, ToolMessage
 from typing import Annotated, Literal
 from typing_extensions import TypedDict
-from .tools import list_tables_tool, get_schema_tool, db_query_tool
-from .prompts import query_check, query_gen, SubmitFinalAnswer
+from .tools import get_schema_tool, db_query_tool, query_check, query_gen, SubmitFinalAnswer
 from langchain_openai import ChatOpenAI
 
 # State 정의
@@ -59,6 +58,7 @@ model_get_schema = ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools([
 
 def query_gen_node(state: State):
     message = query_gen.invoke(state)
+    print("🔍 query_gen_node:\n", message)
     tool_messages = []
     if message.tool_calls:
         for tc in message.tool_calls:
@@ -91,6 +91,7 @@ workflow.add_node(
         "messages": [model_get_schema.invoke(state["messages"])],
     },
 )
+
 workflow.add_node("query_gen", query_gen_node)
 workflow.add_node("correct_query", model_check_query)
 workflow.add_node("execute_query", create_tool_node_with_fallback([db_query_tool]))
