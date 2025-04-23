@@ -19,25 +19,26 @@ AUTH_TOKEN = os.getenv(
     "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsInBob25lIjoiMDEwLTExMTEtMjIyMiIsIm5hbWUiOiLsnqXqt7zsmrAiLCJpZCI6NCwidXNlclR5cGUiOiJNRU1CRVIiLCJlbWFpbCI6InVzZXIxQHRlc3QuY29tIiwiZ29hbHMiOlsiV0VJR0hUX0xPU1MiXSwiaWF0IjoxNzQ1MDUyMzE5LCJleHAiOjM2MzcyMTIzMTl9._Y1TZGQOGPZDLB4YdYX-21TN1bv_aYBuxX9N_EvY6y_QADh2hLJDEyUKIIGXuc4i"
 )
 
-def get_pt_contract_id_from_token(token: str) -> int:
-    """JWT 토큰에서 member_id를 추출하고 해당 member의 pt_contract_id를 찾습니다.
+def get_pt_contract_id_from_token(token: str) -> tuple[int, int]:
+    """JWT 토큰에서 member_id와 user_type을 추출하고 해당 member의 pt_contract_id를 찾습니다.
     
     Args:
         token (str): JWT 토큰
         
     Returns:
-        int: pt_contract_id, 추출 실패 시 0
+        tuple[int, int]: (pt_contract_id, trainer_id), 추출 실패 시 (0, 0)
     """
     try:
         decoded = jwt.decode(token, options={"verify_signature": False})
         member_id = decoded.get("id", 0)
+        user_type = decoded.get("userType", "")
         
         if member_id == 0:
-            return 0
+            return (0, 0)
             
         # member_id로 pt_contract_id 찾기
         contract_query = f"""
-            SELECT id
+            SELECT id, trainer_id
             FROM pt_contract
             WHERE member_id = {member_id}
             LIMIT 1;
@@ -46,19 +47,19 @@ def get_pt_contract_id_from_token(token: str) -> int:
         contract_result = execute_query(contract_query)
         
         if not contract_result or contract_result == "데이터가 없습니다.":
-            return 0
+            return (0, 0)
             
         # 문자열에서 숫자만 추출
         if isinstance(contract_result, str):
             # 괄호 안의 숫자만 추출
             numbers = re.findall(r'\d+', contract_result)
-            if numbers:
-                return int(numbers[0])
+            if len(numbers) >= 2:
+                return (int(numbers[0]), int(numbers[1]))
         
-        return 0
+        return (0, 0)
         
     except Exception:
-        return 0
+        return (0, 0)
 
 def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Dict:
     """API 요청을 보내는 헬퍼 함수.
@@ -138,8 +139,8 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         print(f"[DEBUG] 입력된 시간 - 시작: {start_dt}, 종료: {end_dt}")
         
         # pt_contract_id로 trainer_id 찾기
-        pt_contract_id = get_pt_contract_id_from_token(AUTH_TOKEN)
-        print(f"[DEBUG] 토큰에서 추출한 pt_contract_id: {pt_contract_id}")
+        pt_contract_id, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        print(f"[DEBUG] 토큰에서 추출한 pt_contract_id: {pt_contract_id}, trainer_id: {trainer_id}")
         
         if pt_contract_id == 0:
             print("[DEBUG] pt_contract_id가 0입니다")
@@ -245,6 +246,16 @@ def get_user_schedule(input: str = "") -> str:
     try:
         print(f"[DEBUG] get_user_schedule 시작 - 입력: {input}")
         
+        # 토큰에서 user_type 추출
+        decoded = jwt.decode(AUTH_TOKEN, options={"verify_signature": False})
+        user_type = decoded.get("userType", "")
+        print(f"[DEBUG] 사용자 타입: {user_type}")
+        
+        # 트레이너인 경우 get_trainer_schedule 함수 사용
+        if user_type == "TRAINER":
+            print("[DEBUG] 트레이너로 확인됨 - get_trainer_schedule 함수 호출")
+            return get_trainer_schedule(input)
+            
         # 전체 일정 조회
         schedules = make_api_request("pt_schedules")
         print(f"[DEBUG] 전체 일정 조회 결과: {schedules}")
@@ -343,7 +354,7 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
             }, ensure_ascii=False)
 
         # 토큰에서 ptContractId 추출
-        pt_contract_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        pt_contract_id, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
         if pt_contract_id == 0:
             return json.dumps({
                 "success": False,
@@ -678,4 +689,207 @@ def modify_schedule(
         return json.dumps({
             "success": False,
             "error": f"예약 처리 중 오류가 발생했어요: {str(e)}"
+        }, ensure_ascii=False)
+
+@tool
+def get_trainer_schedule(input: str = "") -> str:
+    """트레이너의 모든 회원 일정을 조회합니다.
+    
+    Args:
+        input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
+        
+    Returns:
+        str: JSON 형식의 스케줄 정보
+    """
+    try:
+        print(f"[DEBUG] get_trainer_schedule 시작 - 입력: {input}")
+        
+        # 토큰에서 trainer_id 추출
+        _, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        if trainer_id == 0:
+            return json.dumps({
+                "success": False,
+                "error": "트레이너 정보를 찾을 수 없습니다."
+            }, ensure_ascii=False)
+            
+        # 상대적인 날짜 처리
+        target_date_range = parse_relative_date(input)
+        print(f"[DEBUG] 상대적 날짜 파싱 결과: {target_date_range}")
+        
+        # 트레이너의 모든 회원 일정 조회
+        query = f"""
+            SELECT 
+                ps.reservation_id,
+                ps.start_time,
+                ps.end_time,
+                m.name as member_name
+            FROM pt_schedule ps
+            JOIN pt_contract pc ON ps.pt_contract_id = pc.id
+            JOIN member m ON pc.member_id = m.id
+            WHERE pc.trainer_id = {trainer_id}
+            AND ps.status = 'scheduled'
+        """
+        
+        if target_date_range and all(target_date_range):
+            start_dt = datetime(target_date_range[0], target_date_range[1], target_date_range[2])
+            end_dt = datetime(target_date_range[3], target_date_range[4], target_date_range[5])
+            query += f"""
+                AND ps.start_time >= '{start_dt.strftime('%Y-%m-%d %H:%M:%S')}'
+                AND ps.start_time <= '{end_dt.strftime('%Y-%m-%d %H:%M:%S')}'
+            """
+            
+        query += " ORDER BY ps.start_time ASC;"
+        
+        print(f"[DEBUG] 일정 조회 쿼리: {query}")
+        schedules = execute_query(query)
+        
+        if not schedules or schedules == "데이터가 없습니다.":
+            return json.dumps({
+                "success": True,
+                "schedules": []
+            }, ensure_ascii=False)
+            
+        formatted_schedules = []
+        for schedule in schedules:
+            try:
+                start_time = datetime.fromtimestamp(schedule[1])
+                end_time = datetime.fromtimestamp(schedule[2])
+                
+                formatted_schedule = {
+                    "reservationId": schedule[0],
+                    "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
+                    "endTime": end_time.strftime("%H:%M"),
+                    "memberName": schedule[3]
+                }
+                formatted_schedules.append(formatted_schedule)
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] 일정 포맷팅 오류: {str(e)}")
+                continue
+        
+        return json.dumps({
+            "success": True,
+            "schedules": formatted_schedules
+        }, ensure_ascii=False)
+        
+    except Exception as e:
+        print(f"[DEBUG] 예외 발생: {str(e)}")
+        return json.dumps({
+            "success": False,
+            "error": f"일정 조회 중 오류가 발생했습니다: {str(e)}"
+        }, ensure_ascii=False)
+
+@tool
+def get_member_schedule(member_name: str, input: str = "") -> str:
+    """트레이너가 특정 회원의 일정을 조회합니다.
+    
+    Args:
+        member_name (str): 회원 이름
+        input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
+        
+    Returns:
+        str: JSON 형식의 스케줄 정보
+    """
+    try:
+        print(f"[DEBUG] ===== get_member_schedule 함수 시작 =====")
+        print(f"[DEBUG] 입력 파라미터:")
+        print(f"  - member_name: {member_name}")
+        print(f"  - input: {input}")
+        
+        # 토큰에서 trainer_id 추출
+        print("[DEBUG] 토큰에서 trainer_id 추출 시도")
+        _, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
+        print(f"[DEBUG] 추출된 trainer_id: {trainer_id}")
+        
+        if trainer_id == 0:
+            print("[DEBUG] 트레이너 ID 추출 실패")
+            return json.dumps({
+                "success": False,
+                "error": "트레이너 정보를 찾을 수 없습니다."
+            }, ensure_ascii=False)
+            
+        # 상대적인 날짜 처리
+        print("[DEBUG] 날짜 범위 파싱 시도")
+        target_date_range = parse_relative_date(input)
+        print(f"[DEBUG] 파싱된 날짜 범위: {target_date_range}")
+        
+        # 특정 회원의 일정 조회
+        print("[DEBUG] SQL 쿼리 생성 시작")
+        query = f"""
+            SELECT 
+                ps.reservation_id,
+                ps.start_time,
+                ps.end_time,
+                m.name as member_name
+            FROM pt_schedule ps
+            JOIN pt_contract pc ON ps.pt_contract_id = pc.id
+            JOIN member m ON pc.member_id = m.id
+            WHERE pc.trainer_id = {trainer_id}
+            AND m.name = '{member_name}'
+            AND ps.status = 'scheduled'
+        """
+        
+        if target_date_range and all(target_date_range):
+            print("[DEBUG] 날짜 범위 조건 추가")
+            start_dt = datetime(target_date_range[0], target_date_range[1], target_date_range[2])
+            end_dt = datetime(target_date_range[3], target_date_range[4], target_date_range[5])
+            query += f"""
+                AND ps.start_time >= '{start_dt.strftime('%Y-%m-%d %H:%M:%S')}'
+                AND ps.start_time <= '{end_dt.strftime('%Y-%m-%d %H:%M:%S')}'
+            """
+            print(f"[DEBUG] 추가된 날짜 범위: {start_dt} ~ {end_dt}")
+            
+        query += " ORDER BY ps.start_time ASC;"
+        
+        print(f"[DEBUG] 최종 SQL 쿼리:\n{query}")
+        print("[DEBUG] 쿼리 실행 시작")
+        schedules = execute_query(query)
+        print(f"[DEBUG] 쿼리 실행 결과: {schedules}")
+        
+        if not schedules or schedules == "데이터가 없습니다.":
+            print("[DEBUG] 일정 데이터 없음")
+            return json.dumps({
+                "success": True,
+                "schedules": [],
+                "message": f"{member_name} 회원님의 예약된 일정이 없습니다."
+            }, ensure_ascii=False)
+            
+        print("[DEBUG] 일정 데이터 포맷팅 시작")
+        formatted_schedules = []
+        for schedule in schedules:
+            try:
+                print(f"[DEBUG] 일정 데이터 처리: {schedule}")
+                start_time = datetime.fromtimestamp(schedule[1])
+                end_time = datetime.fromtimestamp(schedule[2])
+                
+                formatted_schedule = {
+                    "reservationId": schedule[0],
+                    "startTime": start_time.strftime("%Y년 %m월 %d일 %H:%M"),
+                    "endTime": end_time.strftime("%H:%M"),
+                    "memberName": schedule[3]
+                }
+                print(f"[DEBUG] 포맷팅된 일정: {formatted_schedule}")
+                formatted_schedules.append(formatted_schedule)
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] 일정 포맷팅 오류 발생: {str(e)}")
+                print(f"[DEBUG] 문제가 발생한 일정 데이터: {schedule}")
+                continue
+        
+        print("[DEBUG] 최종 응답 생성")
+        response = json.dumps({
+            "success": True,
+            "schedules": formatted_schedules,
+            "message": f"{member_name} 회원님의 예약된 일정입니다."
+        }, ensure_ascii=False)
+        print(f"[DEBUG] 생성된 응답: {response}")
+        print("[DEBUG] ===== get_member_schedule 함수 종료 =====")
+        return response
+        
+    except Exception as e:
+        print(f"[DEBUG] 예외 발생: {str(e)}")
+        print(f"[DEBUG] 예외 상세 정보:")
+        import traceback
+        traceback.print_exc()
+        return json.dumps({
+            "success": False,
+            "error": f"일정 조회 중 오류가 발생했습니다: {str(e)}"
         }, ensure_ascii=False) 
