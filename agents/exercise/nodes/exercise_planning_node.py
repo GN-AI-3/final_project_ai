@@ -15,7 +15,7 @@ TABLE_SCHEMA_FOR_MEMBER = {
         "description": "사용자의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다."
     },
     "member": {
-        "columns": ["id", "name", "email", "phone", "profile_image", "goal"],
+        "columns": ["id", "name", "email", "phone", "goal"],
         "description": "사용자 정보. goal은 사용자의 운동 목표입니다 (예: 벌크업, 체중 감량)."
     }
 }
@@ -65,8 +65,8 @@ TABLE_SCHEMA_FOR_TRAINER = {
         "description": "회원의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다."
     },
     "member": {
-        "columns": ["id", "name", "email", "phone", "profile_image", "goal"],
-        "description": "회원 정보. goal은 회원의 운동 목표입니다 (예: 벌크업, 체중 감량)."
+        "columns": ["id", "name", "email", "phone", "goal"],
+        "description": "회원 정보. goal은 회원의 운동 목표입니다 (예: 벌크업, 체중 감량). 회원을 조회해야하는 경우엔 동명이인이 있을 수 있으므로 반드시 pt_contract 테이블을 조회해야 한다. "
     },
     "pt_contract" : {
         "columns": ["id","member_id", "trainer_id"],

@@ -63,7 +63,7 @@ def add_workout_log(data: dict | str) -> str:
     url = f"{BACKEND_URL}/api/exercise_records"
     
     headers = {
-        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCQ4UW5XSWNwYmJNV1FuOEt4OTRSRndPLzl3WW8yNnN0eG50ZDR2bjNCRDBiYmgzUnNXcUVaYSIsInBob25lIjoiMDEwLTMzMzMtMzMzMyIsIm5hbWUiOiLquYDsp4Dtm4giLCJpZCI6MTYsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJqaWh1bkBnbWFpbC5jb20iLCJnb2FscyI6WyJXRUlHSFRfTE9TUyIsIlNUUkVOR1RIIiwiTUVOVEFMX0hFQUxUSCIsIkhFQUxUSF9NQUlOVEVOQU5DRSIsIkJPRFlfU0hBUEUiLCJIT0JCWSJdLCJpYXQiOjE3NDQ3ODMzMzMsImV4cCI6MTc0NTE0MzMzM30.Ywg6TPBfJtJ4FTqyoEylKGcEnppaNdiKRoSrlM5F5vqqzR_cyJn1B3NtgBR7rnhp",
+        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwaG9uZSI6IjAxMC0xMTExLTIyMjIiLCJuYW1lIjoi7J6l6re87JqwIiwiaWQiOjQsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJ1c2VyMUB0ZXN0LmNvbSIsImdvYWxzIjpbIldFSUdIVF9MT1NTIl0sImlhdCI6MTc0NTM5MTQxOCwiZXhwIjozNjM3NTUxNDE4fQ.2W6hstdDHv6NuuZPM2DSGxcGeXoeDKWhbB_wFuRlARdriVIna2l84VxaWu5QPZgk",
         "Content-Type": "application/json"
     }
 
@@ -87,7 +87,7 @@ def modify_workout_log(data: dict | str) -> str:
     url = f"{BACKEND_URL}/api/exercise_records"
     
     headers = {
-        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCQ4UW5XSWNwYmJNV1FuOEt4OTRSRndPLzl3WW8yNnN0eG50ZDR2bjNCRDBiYmgzUnNXcUVaYSIsInBob25lIjoiMDEwLTMzMzMtMzMzMyIsIm5hbWUiOiLquYDsp4Dtm4giLCJpZCI6MTYsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJqaWh1bkBnbWFpbC5jb20iLCJnb2FscyI6WyJXRUlHSFRfTE9TUyIsIlNUUkVOR1RIIiwiTUVOVEFMX0hFQUxUSCIsIkhFQUxUSF9NQUlOVEVOQU5DRSIsIkJPRFlfU0hBUEUiLCJIT0JCWSJdLCJpYXQiOjE3NDQ3ODMzMzMsImV4cCI6MTc0NTE0MzMzM30.Ywg6TPBfJtJ4FTqyoEylKGcEnppaNdiKRoSrlM5F5vqqzR_cyJn1B3NtgBR7rnhp",
+        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwaG9uZSI6IjAxMC0xMTExLTIyMjIiLCJuYW1lIjoi7J6l6re87JqwIiwiaWQiOjQsInVzZXJUeXBlIjoiTUVNQkVSIiwiZW1haWwiOiJ1c2VyMUB0ZXN0LmNvbSIsImdvYWxzIjpbIldFSUdIVF9MT1NTIl0sImlhdCI6MTc0NTM5MTQxOCwiZXhwIjozNjM3NTUxNDE4fQ.2W6hstdDHv6NuuZPM2DSGxcGeXoeDKWhbB_wFuRlARdriVIna2l84VxaWu5QPZgk",
         "Content-Type": "application/json"
     }
 
