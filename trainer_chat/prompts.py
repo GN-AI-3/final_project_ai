@@ -172,7 +172,7 @@ Return exactly one valid JSON object with no markdown, examples, or extra text, 
 - If both relative and absolute expressions are present, normalize them using the current reference time before SQL generation.
 - Weekday expressions (e.g., "금요일") must be computed using:
   `DATE_TRUNC('week', ...) + INTERVAL 'n days'`
-- Apply `AT TIME ZONE '{user_timezone}'` exactly once per SQL expression (for both sql_start_expr and sql_end_expr independently).
+- sql_start_expr must be the 00:00:00 time of the current day/week/month.
 - sql_end_expr must be the 00:00:00 time of the next day/week/month.
 - All fixed absolute time points must use TIMESTAMP 'YYYY-MM-DD HH:MM:SS' format.
 - If a period like "5일" is mentioned without a direction, infer the direction using the context of the full expression. Default to the future **only if no contextual clue is available.**
@@ -227,7 +227,7 @@ CONTEXT:
 match user_intent:
     case "View Schedule":
         sql_time_expr = relative_time_expr_to_sql(user_input)
-        get_pt_schedule(user_input, trainer_id, sql_time_expr)
+        get_pt_schedule(user_input, trainer_id, sql_time_expr["sql_start_expr"], sql_time_expr["sql_end_expr"])
     case _: tool = None
 
 ---

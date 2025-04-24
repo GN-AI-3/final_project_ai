@@ -12,13 +12,11 @@ def relative_time_expr_to_sql(user_input: str) -> dict:
     사용자 입력에서 시간 조건을 추출하여 SQL 시간 조건으로 변환합니다.
 
     Parameters:
-    - user_input: 상대적 시간 표현이 포함된 자연어 입력
+    - user_input: 사용자의 입력
 
     Returns:
     - sql_start_expr: SQL 시작 시간 조건
-        ex) DATE_TRUNC('week', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')
     - sql_end_expr: SQL 종료 시간 조건
-        ex) DATE_TRUNC('week', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul') + INTERVAL '1 week
     """
     
     tz = pytz.timezone("Asia/Seoul")

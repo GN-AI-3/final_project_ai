@@ -32,6 +32,5 @@ def pt_schedule_node(state: ptScheduleState, model: ChatOpenAI) -> ptScheduleSta
         "sql_time_expr": state.sql_time_expr,
     })
 
-    print("pt schedule response: ", response["output"])
     state.response = response["output"]
     return state

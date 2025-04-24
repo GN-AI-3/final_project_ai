@@ -59,31 +59,27 @@ class SubmitFinalAnswer(BaseModel):
 
 
 @tool
-def get_pt_schedule(user_input: str, trainer_id: int, sql_time_expr: dict | str) -> Sequence[Dict[str, Any]] | str:
+def get_pt_schedule(user_input: str, trainer_id: int, sql_start_expr: str, sql_end_expr: str) -> Sequence[Dict[str, Any]] | str:
     """
     트레이너의 PT 일정을 조회하는 함수입니다.
 
     Parameters:
     - user_input: 자연어 입력
     - trainer_id: 트레이너의 고유 ID
-    - sql_time_expr: 시간 조건을 포함한 딕셔너리 또는 문자열
+    - sql_start_expr: SQL 시작 시간 조건
+    - sql_end_expr: SQL 종료 시간 조건
 
     Returns:
     - 트레이너의 PT 일정 정보 또는 에러 메시지
     """
 
-    # 파싱 및 에러 처리
-    try:
-        sql_time_expr = json.loads(sql_time_expr)
-    except Exception as e:
-        return "Error: Invalid SQL time expression. Please rewrite your query and try again."
-
     query = f"""
     SELECT
         ps.id,
+        ps.current_pt_count,
+        pc.total_count,
         ps.start_time,
         ps.end_time,
-        ps.status,
         m.name AS member_name
     FROM pt_schedule ps
         JOIN pt_contract pc ON ps.pt_contract_id = pc.id
@@ -92,16 +88,14 @@ def get_pt_schedule(user_input: str, trainer_id: int, sql_time_expr: dict | str)
         AND pc.status = 'ACTIVE'
         AND ps.status = 'SCHEDULED'
         AND pc.trainer_id = {trainer_id}
-        AND ps.start_time >= {sql_time_expr["sql_start_expr"]}
-        AND ps.start_time < {sql_time_expr["sql_end_expr"]}
+        AND ps.start_time >= {sql_start_expr}
+        AND ps.start_time < {sql_end_expr}
     ORDER BY ps.start_time;
     """
 
-    print("$$ query: ", query)
+    print('$$ get_pt_schedule query', query)
 
     result = db.run_no_throw(query)
-
-    print("get_pt_schedule result: ", result)
 
     if not result:
         return "Error: Query failed. Please rewrite your query and try again."
