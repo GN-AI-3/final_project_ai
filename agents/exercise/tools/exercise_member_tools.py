@@ -13,7 +13,8 @@ from qdrant_client.models import SearchParams
 
 load_dotenv()
 
-es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
+# es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
+es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
 exercise_index_name = "exercises"
 
 qdrant_client = QdrantClient(
@@ -34,6 +35,10 @@ DB_CONFIG = {
 TABLE_SCHEMA = {
     "exercise_record": {
         "columns": ["id", "member_id", "exercise_id", "date", "record_data", "memo_data"],
+        "foreign_keys": {
+            "member_id": "member.id",
+            "exercise_id": "exercise.id"
+        },
         "description": "사용자의 개별 운동 수행 기록. record_data는 세트/반복/무게 등의 상세 기록이며, memo_data는 자유 메모입니다. exercise_id는 exercise 테이블의 id와 연결해 운동 이름(name)을 조회해야 합니다."
     },
     "member": {
@@ -42,14 +47,26 @@ TABLE_SCHEMA = {
     },
     "pt_contract": {
         "columns": ["id","member_id", "trainer_id"],
+        "foreign_keys": {
+            "member_id": "member.id",
+            "trainer_id": "trainer.id"
+        },
         "description": "PT 계약 정보, 이 테이블에서 트레이너의 회원 정보를 조회할 수 있다."
     },
     "pt_log": {
         "columns": ["id", "member_id", "trainer_id"],
+        "foreign_keys": {
+            "member_id": "member.id",
+            "trainer_id": "trainer.id"
+        },
         "description": "PT 수업 일지"
     },
     "pt_log_exercise": {
         "columns": ["id", "pt_log_id", "exercise_id", "sets", "reps", "weight"],
+        "foreign_keys": {
+            "pt_log_id": "pt_log.id",
+            "exercise_id": "exercise.id"
+        },
         "description": "PT 수업 일지에 포함된 운동 정보"
     }
 }
@@ -161,6 +178,8 @@ def master_select_db(table_name: str, column_name: str, value: str) -> str:
         )
 
         params = (value,)
+        print("query: ", query)
+        print("params: ", params)
 
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cursor:
@@ -217,6 +236,93 @@ def master_select_db_multi(
     except Exception as e:
         return json.dumps({"error": f"Database error: {str(e)}"})
     
+# def master_select_db_multi(table_name: str, conditions: dict) -> str:
+#     """
+#     PostgreSQL - 지정된 테이블에 대해 조건 기반 조회 수행.
+#     조건 컬럼이 다른 테이블에 있으면 자동으로 JOIN 수행.
+
+#     Args:
+#         table_name (str): 기준 테이블
+#         conditions (dict): 조건 컬럼과 값 (예: {"name": "장근우"})
+
+#     Returns:
+#         str: JSON 결과 또는 오류 메시지
+#     """
+#     if table_name not in TABLE_SCHEMA:
+#         return json.dumps({"error": "Invalid table name"})
+
+#     try:
+#         base_alias = "t0"
+#         joins = []
+#         where_clauses = []
+#         used_tables = {table_name: base_alias}
+#         alias_counter = 1
+
+#         for cond_col, cond_val in conditions.items():
+#             found = False
+#             for t_name, schema in TABLE_SCHEMA.items():
+#                 if cond_col in schema["columns"]:
+#                     found = True
+#                     if t_name not in used_tables:
+#                         alias = f"t{alias_counter}"
+#                         alias_counter += 1
+#                         used_tables[t_name] = alias
+
+#                         # 조인 경로 추론
+#                         for fk_col, ref in TABLE_SCHEMA[t_name].get("foreign_keys", {}).items():
+#                             ref_table, ref_col = ref.split(".")
+#                             if ref_table in used_tables:
+#                                 joins.append(
+#                                     sql.SQL("JOIN {} {} ON {}.{} = {}.{}").format(
+#                                         sql.Identifier(t_name),
+#                                         sql.Identifier(alias),
+#                                         sql.Identifier(alias),
+#                                         sql.Identifier(fk_col),
+#                                         sql.Identifier(used_tables[ref_table]),
+#                                         sql.Identifier(ref_col),
+#                                     )
+#                                 )
+
+#                     where_clauses.append(
+#                         sql.SQL("{}.{} = %s").format(
+#                             sql.Identifier(used_tables[t_name]),
+#                             sql.Identifier(cond_col)
+#                         )
+#                     )
+#                     break
+#             if not found:
+#                 return json.dumps({"error": f"Invalid column name: {cond_col}"})
+
+#         select_fields = sql.SQL(", ").join([
+#             sql.SQL(f"{alias}.*") for alias in used_tables.values()
+#         ])
+
+#         from_clause = sql.SQL("{} {}").format(
+#             sql.Identifier(table_name),
+#             sql.SQL("AS {}").format(sql.Identifier(base_alias))
+#         )
+
+#         query = sql.SQL("SELECT {} FROM {} {} WHERE {}").format(
+#             select_fields,
+#             from_clause,
+#             sql.SQL(" ").join(joins),
+#             sql.SQL(" AND ").join(where_clauses)
+#         )
+
+#         params = list(conditions.values())
+
+#         with psycopg2.connect(**DB_CONFIG) as conn:
+#             with conn.cursor() as cursor:
+#                 cursor.execute(query, params)
+#                 rows = cursor.fetchall()
+#                 column_names = [desc[0] for desc in cursor.description]
+
+#                 result = [dict(zip(column_names, row)) for row in rows]
+#                 return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+#     except Exception as e:
+#         return json.dumps({"error": f"Database error: {str(e)}"})
+
 def search_exercise_by_name(name: str):
     name_compact = name.replace(" ", "")
 
