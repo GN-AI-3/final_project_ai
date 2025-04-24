@@ -6,4 +6,3 @@ class ptScheduleState(BaseModel):
     trainer_id: int
     response: str | None = None
     chat_history: List[Dict[str, Any]] = []
-    sql_time_expr: dict | str | None = None

@@ -5,9 +5,10 @@ from langchain.prompts import PromptTemplate
 import pytz
 import datetime
 from langchain.agents import tool
+from .db_utils import db
 
 @tool
-def relative_time_expr_to_sql(user_input: str) -> dict:
+def relative_time_expr_to_sql(user_input: str) -> tuple[str, str]:
     """
     사용자 입력에서 시간 조건을 추출하여 SQL 시간 조건으로 변환합니다.
 
@@ -36,4 +37,19 @@ def relative_time_expr_to_sql(user_input: str) -> dict:
     except Exception as e:
         return "Error: LLM 응답 파싱 실패"
     
-    return { "sql_start_expr": result["sql_start_expr"], "sql_end_expr": result["sql_end_expr"] }
+    return (result["sql_start_expr"], result["sql_end_expr"])
+
+
+@tool
+def excute_query(query: str) -> str:
+    """
+    SQL 쿼리를 실행하고 결과를 반환합니다.
+
+    Parameters:
+    - query: SQL 쿼리
+
+    Returns:
+    - 쿼리 결과 문자열
+    """
+    
+    return db.run_no_throw(query)

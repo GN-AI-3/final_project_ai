@@ -226,11 +226,17 @@ CONTEXT:
 
 match user_intent:
     case "View Schedule":
-        sql_time_expr = relative_time_expr_to_sql(user_input)
-        get_pt_schedule(user_input, trainer_id, sql_time_expr["sql_start_expr"], sql_time_expr["sql_end_expr"])
+        1. Use `gen_pt_schedule_query` tool to generate a SQL query
+        2. Use `excute_query` tool to get the result
     case _: tool = None
 
 ---
+
+## Output Style Guidelines
+PT 스케줄을 말할 때는 다음 형식을 참고해서 자연스럽고 일상적인 말투로 알려줘.
+- 먼저 이번 달에 남은 PT 횟수가 몇 개인지 짧게 요약해줘.
+- 회원 이름과 현재 PT 회차/전체 PT 회차 그리고 날짜, 시작/종료 시간을 알려줘.
+- 문장은 자연스럽지만 짧고, 명료하게. **트레이너가 직접 말하는 것처럼 답변해줘.**
 
 ALL RESPONSES MUST BE IN KOREAN.
 """
