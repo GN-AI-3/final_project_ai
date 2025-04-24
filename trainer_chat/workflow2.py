@@ -27,5 +27,5 @@ def create_pt_schedule_workflow():
 
 if __name__ == "__main__":
     workflow = create_pt_schedule_workflow()
-    workflow.invoke({"message": "오늘 PT 스케줄 알려줘", "trainer_id": 1})
+    workflow.invoke({"input": "오늘 PT 스케줄 알려줘", "trainer_id": 1})
 

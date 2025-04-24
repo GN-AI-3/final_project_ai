@@ -1,15 +1,16 @@
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
+from langchain.agents import AgentExecutor, create_tool_calling_agent, tool
 import pytz
 from .db_utils import db
-from langchain.tools import Tool
 import re
 import datetime
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, Field
 from .prompts import query_gen_system, query_check_system, time_range_to_sql_prompt
 import json
+
+from pydantic import BaseModel, Field
+from langchain_core.tools import Tool
 
 toolkit = SQLDatabaseToolkit(db=db, llm=ChatOpenAI(model="gpt-4o-mini"))
 tools = toolkit.get_tools()
@@ -103,22 +104,23 @@ query_gen = query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bi
     tool_choice="required"
 )
 
-def get_pt_schedule(data: dict | str) -> str:
-    """
-    Get the PT schedule for the given trainer.
-    - `user_input`: The user's input message.
-    - `trainer_id`: The ID of the trainer.
-    """
+class GetPtScheduleArgs(BaseModel):
+    user_input: str = Field(..., description="자연어 입력")
+    trainer_id: int = Field(..., description="트레이너 ID")
 
-    # 💥 여기서 str이면 dict로 파싱해주기
-    if isinstance(data, str):
-        try:
-            data = json.loads(data)
-        except json.JSONDecodeError as e:
-            return f"JSON 디코딩 오류: {str(e)}"
 
-    user_input = data.get("user_input")
-    trainer_id = data.get("trainer_id")
+@tool
+def get_pt_schedule(user_input: str, trainer_id: int) -> str:
+    """
+    트레이너의 PT 일정을 조회하는 함수입니다.
+
+    Parameters:
+    - user_input: 자연어 입력
+    - trainer_id: 트레이너의 고유 ID
+
+    Returns:
+    - PT 일정 정보 또는 에러 메시지
+    """
 
     query = f"""
 SELECT
@@ -126,13 +128,13 @@ SELECT
     ps.start_time,
     ps.end_time,
     ps.status,
-    ps.reason,
-    m.name AS member_name,
-    pc.id AS contract_id
+    m.name AS member_name
 FROM pt_schedule ps
          JOIN pt_contract pc ON ps.pt_contract_id = pc.id
          JOIN member m ON pc.member_id = m.id
 WHERE ps.is_deleted = false
+    AND pc.status = 'ACTIVE'
+    AND ps.status = 'SCHEDULED'
     AND pc.trainer_id = {trainer_id}
 ORDER BY ps.start_time;
     """

@@ -216,17 +216,19 @@ FOLLOW THE INSTRUCTIONS BELOW CAREFULLY:
 ---
 
 1. Requirement Analysis
+    - trainer_id: {trainer_id}
+    - user_input: {input}
     - Extract the user's intent from their message.
 
 # Tool invocation
-match user_intend:
-    case "View Schedule": tool = `pt_schedule_list`
+match user_intent:
+    case "View Schedule": tool = `get_pt_schedule`
     case _: tool = None
 
 tool(data)
 
 IMPORTANT RULES:
-- When using `pt_schedule_list`, include BOTH `user_input` and `trainer_id`.
+- When using `get_pt_schedule`, include BOTH `user_input` and `trainer_id` in the arguments.
 
 ---
 
