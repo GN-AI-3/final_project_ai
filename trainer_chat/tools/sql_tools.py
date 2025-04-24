@@ -1,11 +1,13 @@
-from .prompts import time_range_to_sql_prompt
-from langchain_openai import ChatOpenAI
-import json
-from langchain.prompts import PromptTemplate
-import pytz
 import datetime
+import json
+
+import pytz
 from langchain.agents import tool
-from .db_utils import db
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
+
+from ..db_utils import db
+from ..prompts import RELATIVE_TIME_TO_SQL_PROMPT
 
 @tool
 def relative_time_expr_to_sql(user_input: str) -> tuple[str, str]:
@@ -23,7 +25,7 @@ def relative_time_expr_to_sql(user_input: str) -> tuple[str, str]:
     tz = pytz.timezone("Asia/Seoul")
     now = datetime.datetime.now(tz)
 
-    time_range_prompt = PromptTemplate.from_template(time_range_to_sql_prompt)
+    time_range_prompt = PromptTemplate.from_template(RELATIVE_TIME_TO_SQL_PROMPT)
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     range_response = llm.invoke(time_range_prompt.format(
         user_input=user_input,

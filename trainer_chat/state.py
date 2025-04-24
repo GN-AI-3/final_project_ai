@@ -1,7 +1,7 @@
-from typing import Any, List, Dict
+from typing import Any, Dict, List
 from pydantic import BaseModel
 
-class ptScheduleState(BaseModel):
+class trainerChatState(BaseModel):
     input: str
     trainer_id: int
     response: str | None = None

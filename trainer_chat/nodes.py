@@ -1,13 +1,12 @@
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 
-from .pt_schedule_state import ptScheduleState
 from .prompts import PT_SCHEDULE_PROMPT
-from .tools import gen_pt_schedule_query
-from .sql_tools import excute_query
+from .tools import excute_query, gen_pt_schedule_query
+from .state import trainerChatState
 
-def pt_schedule_node(state: ptScheduleState, model: ChatOpenAI) -> ptScheduleState:
+def pt_schedule_node(state: trainerChatState, model: ChatOpenAI) -> trainerChatState:
     """PT 스케줄 관리 노드"""
 
     prompt = ChatPromptTemplate.from_messages(
