@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from ..db_utils import db
 from ..prompts import query_check_system, query_gen_system
-from .sql_tools import relative_time_expr_to_sql
 
 toolkit = SQLDatabaseToolkit(db=db, llm=ChatOpenAI(model="gpt-4o-mini"))
 tools = toolkit.get_tools()

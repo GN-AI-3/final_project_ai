@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from .prompts import PT_SCHEDULE_PROMPT
-from .tools import excute_query, gen_pt_schedule_query
+from .tools import select_pt_schedule, add_pt_schedule
 from .state import trainerChatState
 
 def pt_schedule_node(state: trainerChatState, model: ChatOpenAI) -> trainerChatState:
@@ -17,7 +17,7 @@ def pt_schedule_node(state: trainerChatState, model: ChatOpenAI) -> trainerChatS
             ("placeholder", "{agent_scratchpad}"),
         ]
     )
-    tools=[gen_pt_schedule_query, excute_query]
+    tools=[select_pt_schedule, add_pt_schedule]
     
     agent = create_tool_calling_agent(model, tools, prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)

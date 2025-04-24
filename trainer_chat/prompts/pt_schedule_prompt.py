@@ -16,8 +16,11 @@ CONTEXT:
 
 match user_intent:
     case "View Schedule":
-        1. Use `gen_pt_schedule_query` tool to generate a SQL query
-        2. Use `excute_query` tool to get the result
+        1. Use `select_pt_schedule` tool to get the pt_schedule list.
+        2. Respond with the result.
+    case "Book Schedule":
+        1. Use `add_pt_schedule` tool to add a new PT schedule. (do not use `select_pt_schedule` tool)
+        2. Respond with the result.
     case _: tool = None
 
 ---
