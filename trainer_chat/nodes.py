@@ -5,6 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from .pt_schedule_state import ptScheduleState
 from .prompts import PT_SCHEDULE_PROMPT
 from .tools import get_pt_schedule
+from .sql_tools import relative_time_expr_to_sql
 
 def pt_schedule_node(state: ptScheduleState, model: ChatOpenAI) -> ptScheduleState:
     """PT 스케줄 관리 노드"""
@@ -17,7 +18,7 @@ def pt_schedule_node(state: ptScheduleState, model: ChatOpenAI) -> ptScheduleSta
             ("placeholder", "{agent_scratchpad}"),
         ]
     )
-    tools=[get_pt_schedule]
+    tools=[get_pt_schedule, relative_time_expr_to_sql]
     
     agent = create_tool_calling_agent(model, tools, prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
@@ -27,10 +28,8 @@ def pt_schedule_node(state: ptScheduleState, model: ChatOpenAI) -> ptScheduleSta
     response = agent_executor.invoke({
         "input": state.input,
         "trainer_id": state.trainer_id,
-        "chat_history": [
-            HumanMessage(content="hi! my name is bob"),
-            AIMessage(content="Hello Bob! How can I assist you today?"),
-        ],
+        "chat_history": state.chat_history,
+        "sql_time_expr": state.sql_time_expr,
     })
 
     print("pt schedule response: ", response["output"])

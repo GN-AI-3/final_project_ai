@@ -215,20 +215,20 @@ FOLLOW THE INSTRUCTIONS BELOW CAREFULLY:
 
 ---
 
+CONTEXT:
+- trainer_id: {trainer_id}
+- user_input: {input}
+
+---
+
 1. Requirement Analysis
-    - trainer_id: {trainer_id}
-    - user_input: {input}
     - Extract the user's intent from their message.
 
-# Tool invocation
 match user_intent:
-    case "View Schedule": tool = `get_pt_schedule`
+    case "View Schedule":
+        sql_time_expr = relative_time_expr_to_sql(user_input)
+        get_pt_schedule(user_input, trainer_id, sql_time_expr)
     case _: tool = None
-
-tool(data)
-
-IMPORTANT RULES:
-- When using `get_pt_schedule`, include BOTH `user_input` and `trainer_id` in the arguments.
 
 ---
 
