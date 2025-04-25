@@ -2,8 +2,8 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain.tools import Tool
-from workout_log.workout_log_prompt import WORKOUT_LOG_PROMPT2
-from pt_log.pt_log_prompt import PT_LOG_PROMPT_WITH_HISTORY_ENGLISH
+from workout_log.workout_log_prompt import WORKOUT_LOG_PROMPT
+from pt_log.pt_log_prompt import PT_LOG_PROMPT_WITH_HISTORY
 from workout_log.workout_log_tool import add_workout_log, modify_workout_log, is_workout_log_exist
 from workout_log.workout_log_model import workoutLogState
 from agents.exercise.tools.exercise_member_tools import search_exercise_by_name
@@ -66,7 +66,7 @@ def workout_log(state: workoutLogState, llm: ChatOpenAI) -> workoutLogState:
 
     if chat_history and len(chat_history) > 0:
         reconstruct_prompt = ChatPromptTemplate.from_messages([
-            ("system", PT_LOG_PROMPT_WITH_HISTORY_ENGLISH),
+            ("system", PT_LOG_PROMPT_WITH_HISTORY),
             ("user", "{message}"),
             ("user", "{chat_history}"),
         ])
@@ -81,7 +81,7 @@ def workout_log(state: workoutLogState, llm: ChatOpenAI) -> workoutLogState:
 
     print("reconstructed_message: ", reconstructed_message)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", WORKOUT_LOG_PROMPT2),
+        ("system", WORKOUT_LOG_PROMPT),
         ("user", "{reconstructed_message}"),
         ("user", "{memberId}"),
         ("user", "{date}"),
