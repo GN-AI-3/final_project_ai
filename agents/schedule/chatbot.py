@@ -12,7 +12,7 @@ from langchain.agents import AgentExecutor
 from langchain.agents.format_scratchpad import format_to_openai_function_messages
 from langchain.agents.output_parsers import OpenAIFunctionsAgentOutputParser
 
-from .tools import get_user_schedule, add_schedule, modify_schedule
+from .tools import get_user_schedule, add_schedule, modify_schedule, get_trainer_schedule, get_member_schedule
 from .utils.date_manager import DateManager
 from .utils.prompt_manager import PromptManager
 
@@ -46,7 +46,7 @@ class ScheduleChatbot:
         Args:
             tools: 사용할 도구 리스트 (기본값: None)
         """
-        self.tools = tools or [get_user_schedule, add_schedule, modify_schedule]
+        self.tools = tools or [get_user_schedule, add_schedule, modify_schedule, get_trainer_schedule, get_member_schedule]
         self.functions = [convert_to_openai_function(t) for t in self.tools]
 
     def _initialize_prompt(self) -> None:
