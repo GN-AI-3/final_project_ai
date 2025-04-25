@@ -1,6 +1,14 @@
 from typing import List, Dict, Any, Optional
 import json
-import jwt
+import base64
+
+try:
+    import jwt
+    # jwt 패키지가 decode 메서드를 가지고 있는지 확인
+    HAS_JWT_DECODE = hasattr(jwt, 'decode')
+except ImportError:
+    # 패키지 설치 안됨
+    HAS_JWT_DECODE = False
 
 from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
@@ -139,7 +147,19 @@ def get_member_id_from_token(token: str) -> int:
         int: member_id, 추출 실패 시 0
     """
     try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
+        if HAS_JWT_DECODE:
+            decoded = jwt.decode(token, options={"verify_signature": False})
+        else:
+            # 수동으로 JWT 디코딩
+            token_parts = token.split('.')
+            if len(token_parts) >= 2:
+                # 패딩 추가
+                padded = token_parts[1] + '=' * (4 - len(token_parts[1]) % 4)
+                # base64 디코딩 후 JSON 파싱
+                decoded = json.loads(base64.b64decode(padded).decode('utf-8'))
+            else:
+                return 0
+        
         return decoded.get("id", 0)
     except Exception:
         return 0

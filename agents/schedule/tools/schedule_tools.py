@@ -3,7 +3,14 @@ from typing import Optional, Dict
 import json
 import httpx
 import os
-import jwt
+# jwt 패키지 사용 확인
+try:
+    import jwt
+    # jwt 패키지가 decode 메서드를 가지고 있는지 확인
+    HAS_JWT_DECODE = hasattr(jwt, 'decode')
+except ImportError:
+    # 패키지 설치 안됨
+    HAS_JWT_DECODE = False
 import re
 
 from langchain.agents import tool
@@ -29,7 +36,22 @@ def get_pt_contract_id_from_token(token: str) -> tuple[int, int]:
         tuple[int, int]: (pt_contract_id, trainer_id), 추출 실패 시 (0, 0)
     """
     try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
+        # jwt 패키지 호환성 처리
+        if HAS_JWT_DECODE:
+            decoded = jwt.decode(token, options={"verify_signature": False})
+        else:
+            # jwt 패키지가 decode 메서드를 가지고 있지 않은 경우 - 수동 디코딩
+            token_parts = token.split('.')
+            if len(token_parts) >= 2:
+                import base64
+                import json
+                # 패딩 추가
+                padded = token_parts[1] + '=' * (4 - len(token_parts[1]) % 4)
+                # base64 디코딩 후 JSON 파싱
+                decoded = json.loads(base64.b64decode(padded).decode('utf-8'))
+            else:
+                return (0, 0)
+        
         member_id = decoded.get("id", 0)
         user_type = decoded.get("userType", "")
         
@@ -247,7 +269,23 @@ def get_user_schedule(input: str = "") -> str:
         print(f"[DEBUG] get_user_schedule 시작 - 입력: {input}")
         
         # 토큰에서 user_type 추출
-        decoded = jwt.decode(AUTH_TOKEN, options={"verify_signature": False})
+        if HAS_JWT_DECODE:
+            decoded = jwt.decode(AUTH_TOKEN, options={"verify_signature": False})
+        else:
+            # jwt 패키지가 decode 메서드를 가지고 있지 않은 경우 - 수동 디코딩
+            token_parts = AUTH_TOKEN.split('.')
+            if len(token_parts) >= 2:
+                import base64
+                # 패딩 추가
+                padded = token_parts[1] + '=' * (4 - len(token_parts[1]) % 4)
+                # base64 디코딩 후 JSON 파싱
+                decoded = json.loads(base64.b64decode(padded).decode('utf-8'))
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "토큰 형식이 올바르지 않습니다."
+                }, ensure_ascii=False)
+        
         user_type = decoded.get("userType", "")
         print(f"[DEBUG] 사용자 타입: {user_type}")
         
