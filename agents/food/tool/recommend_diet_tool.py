@@ -632,15 +632,42 @@ def recommend_diet_tool(params: dict) -> str:
             "carbs": round((target_calories * carbs_ratio) / 4),
             "fat": round((target_calories * fat_ratio) / 9),
         }
+        if period == "한끼":
+            meal_type = params.get("meal_type", "점심")  # 기본값: 점심
 
-        example_sql = f"""
-        SELECT breakfast, lunch, dinner
-        FROM diet_plans
-        WHERE diet_type = '{goal}'
-        AND user_gender = '{gender}'
-        LIMIT 3;
-        """
-        example_data = execute_sql(example_sql)
+            # 하루치 예시들 DB에서 가져옴
+            example_sql = f"""
+            SELECT breakfast, lunch, dinner
+            FROM diet_plans
+            WHERE diet_type = '{goal}'
+            AND user_gender = '{gender}'
+            LIMIT 3;
+            """
+            raw_examples = execute_sql(example_sql)
+
+            # 한끼만 추출
+            meal_key_map = {
+                "아침": "breakfast",
+                "점심": "lunch",
+                "저녁": "dinner"
+            }
+            selected_key = meal_key_map.get(meal_type, "lunch")  # 기본 점심
+
+            one_meal_examples = [
+                {"meal": row.get(selected_key)} for row in raw_examples if row.get(selected_key)
+            ]
+            example_data = json.dumps(one_meal_examples, ensure_ascii=False, indent=2)
+            plan_format = '"meal": "..."'
+        else:
+            
+            example_sql = f"""
+            SELECT breakfast, lunch, dinner
+            FROM diet_plans
+            WHERE diet_type = '{goal}'
+            AND user_gender = '{gender}'
+            LIMIT 3;
+            """
+            example_data = execute_sql(example_sql)
 
         if period == "하루":
             plan_format = '"monday": {"아침": "...", "점심": "...", "저녁": "..."}'
@@ -1015,7 +1042,7 @@ def save_recommended_diet(params: dict) -> str:
                 "planJson": plan_json
             }
         )
-        return f"✅ 추천 식단 저장 완료\n{json.dumps(plan_json, ensure_ascii=False, indent=2)}"
+        return f"\n{json.dumps(plan_json, ensure_ascii=False, indent=2)}"
 
     except Exception as e:
         return f"❌ 저장 실패: {str(e)}"
