@@ -27,7 +27,7 @@ def connect_db():
 
 def connect_es():
     global es
-    es = Elasticsearch("http://localhost:9200")
+    es = Elasticsearch("http://elasticsearch:9200")
 
 # ✅ 인덱스 재생성 (자동완성 + 오타 대응 설정 포함)
 def recreate_elasticsearch_index():

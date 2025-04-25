@@ -13,8 +13,8 @@ from qdrant_client.models import SearchParams
 
 load_dotenv()
 
-# es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
-es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
+es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
+# es = Elasticsearch("http://localhost:9200").options(ignore_status=400)
 exercise_index_name = "exercises"
 
 qdrant_client = QdrantClient(
