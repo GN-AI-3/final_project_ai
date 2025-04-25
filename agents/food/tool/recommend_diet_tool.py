@@ -1418,15 +1418,37 @@ def get_meal_records_tool(params: dict) -> str:
     except Exception as e:
         return f"❌ 식사 기록 조회 실패: {e}"
 def get_weight_from_inbody(member_id: int) -> float:
-    """가장 최근 인바디 기록에서 체중을 가져옵니다."""
-    result = execute_sql(f"""
-        SELECT weight FROM inbody
-        WHERE member_id = {member_id}
-        ORDER BY date DESC
+    """
+    가장 최근 인바디 기록이 없으면 성별 기준 기본 체중을 반환
+    - 남성: 70kg
+    - 여성: 60kg
+    """
+    sql = f"""
+        SELECT i.weight, m.gender
+        FROM member m
+        LEFT JOIN inbody i ON m.member_id = i.member_id
+        WHERE m.member_id = {member_id}
+        ORDER BY i.measured_at DESC NULLS LAST
         LIMIT 1
-    """)
-    return float(json.loads(result)[0]["weight"]) if result else 0.0
+    """
+    try:
+        result = json.loads(execute_sql(sql))
+        if not result:
+            return 70.0  # 결과 자체가 없을 때 fallback
 
+        row = result[0]
+        weight = row.get("weight")
+        gender = row.get("gender", "남성")
+
+        # ✅ weight가 None일 경우 fallback
+        if weight is not None:
+            return float(weight)
+        else:
+            return 70.0 if gender == "남성" else 60.0
+
+    except Exception as e:
+        print(f"❌ 인바디 or 성별 조회 오류: {e}")
+        return 70.0
 
 def get_user_goal(member_id: int) -> str:
     """사용자의 최근 goal 필드를 기반으로 LLM이 식단 유형으로 분류합니다."""
