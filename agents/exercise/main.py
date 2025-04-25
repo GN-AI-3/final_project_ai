@@ -29,24 +29,38 @@ class ExerciseAgent(BaseAgent):
                 serializable_messages.append(str(msg))
         return serializable_messages
 
-    async def process(self, message: str, email: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    async def process(self, message: str, member_id: Optional[int] = None, user_type: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         메인 실행 함수
         
         Args:
             message: 사용자 메시지
-            email: 사용자 이메일 (선택사항, 현재 사용하지 않음)
+            member_id: 회원 ID
+            user_type: 사용자 타입 ("member" 또는 "trainer")
             chat_history: 대화 내역 (선택사항, 현재 사용하지 않음)
         """
-        # email과 chat_history는 현재 사용하지 않지만 매개변수로 받을 수 있도록 함
+        # 기본값 설정
+        if user_type is None:
+            user_type = "member"  # 기본값은 member
+            
+        # member_id와 trainer_id 설정
+        trainer_id = 1  # 트레이너 ID는 항상 1로 고정
+        
+        # member_id가 None인 경우 기본값 설정 (RoutingState에서 None이 허용되지 않음)
+        if member_id is None:
+            member_id = 0  # 기본값으로 0 설정
+            
+        # 트레이너 타입인 경우 member_id를 기본값으로 설정
+        if user_type == "trainer":
+            member_id = 0  # 트레이너인 경우 member_id는 기본값으로 설정
 
         workflow = create_workout_workflow()
 
         initial_state = RoutingState(
             message=message,
-            user_type="trainer",
-            member_id=3,
-            trainer_id=1
+            user_type=user_type,
+            member_id=member_id,
+            trainer_id=trainer_id
         )
 
         # 워크플로우 실행

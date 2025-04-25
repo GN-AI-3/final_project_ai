@@ -124,7 +124,7 @@ class Supervisor:
             logger.info(f"[{request_id}] (3) 에이전트 '{category}' 실행")
             agent = self.agents.get(category, self.agents["general"])
 
-            payload_message = context_info  # ★ 변경: message 자리에 context_info 사용
+            payload_message = context_info
 
             try:
                 if category == "general":
@@ -135,9 +135,18 @@ class Supervisor:
                     )
                 elif category == "schedule":
                     result = await agent.process(
-                        message=payload_message, chat_history=chat_history
+                        message=payload_message,
+                        member_id=int(member_id) if member_id and member_id.isdigit() else None,
+                        user_type=user_type
                     )
-                elif category in ["exercise", "motivation", "food"]:
+                elif category == "exercise":
+                    result = await agent.process(
+                        message=payload_message,
+                        member_id=int(member_id) if member_id and member_id.isdigit() else None,
+                        user_type=user_type,
+                        chat_history=chat_history,
+                    )
+                elif category in ["motivation", "food"]:
                     result = await agent.process(
                         message=payload_message,
                         email=user_id,

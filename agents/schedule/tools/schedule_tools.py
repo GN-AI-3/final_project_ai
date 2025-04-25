@@ -3,7 +3,6 @@ from typing import Optional, Dict
 import json
 import httpx
 import os
-import jwt
 import re
 
 from langchain.agents import tool
@@ -13,26 +12,17 @@ from ..core.database import execute_query
 
 # API 기본 URL 설정 - 환경 변수 사용
 API_BASE_URL = os.getenv("EC2_BACKEND_URL") + "/api"
-# 인증 토큰 설정
-AUTH_TOKEN = os.getenv(
-    "AUTH_TOKEN",
-    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJwYXNzd29yZCI6IiQyYSQxMCRkNEhjZUNXc1VnL2FUdzQ2am14bDV1SHVwV0h4YjdIeWpTVmUuRzlXSi5LeXdoMkRQVmVyRyIsInBob25lIjoiMDEwLTExMTEtMjIyMiIsIm5hbWUiOiLsnqXqt7zsmrAiLCJpZCI6NCwidXNlclR5cGUiOiJNRU1CRVIiLCJlbWFpbCI6InVzZXIxQHRlc3QuY29tIiwiZ29hbHMiOlsiV0VJR0hUX0xPU1MiXSwiaWF0IjoxNzQ1MDUyMzE5LCJleHAiOjM2MzcyMTIzMTl9._Y1TZGQOGPZDLB4YdYX-21TN1bv_aYBuxX9N_EvY6y_QADh2hLJDEyUKIIGXuc4i"
-)
 
-def get_pt_contract_id_from_token(token: str) -> tuple[int, int]:
-    """JWT 토큰에서 member_id와 user_type을 추출하고 해당 member의 pt_contract_id를 찾습니다.
+def get_pt_contract_info(member_id: int) -> tuple[int, int]:
+    """Member ID로 PT 계약 정보를 찾습니다.
     
     Args:
-        token (str): JWT 토큰
+        member_id (int): 회원 ID
         
     Returns:
-        tuple[int, int]: (pt_contract_id, trainer_id), 추출 실패 시 (0, 0)
+        tuple[int, int]: (pt_contract_id, trainer_id), 조회 실패 시 (0, 0)
     """
     try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        member_id = decoded.get("id", 0)
-        user_type = decoded.get("userType", "")
-        
         if member_id == 0:
             return (0, 0)
             
@@ -61,26 +51,36 @@ def get_pt_contract_id_from_token(token: str) -> tuple[int, int]:
     except Exception:
         return (0, 0)
 
-def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Dict:
+def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None, member_id: Optional[int] = None, trainer_id: Optional[int] = None) -> Dict:
     """API 요청을 보내는 헬퍼 함수.
     
     Args:
         endpoint (str): API 엔드포인트
         method (str, optional): HTTP 메소드. 기본값은 "GET"
         data (Optional[Dict], optional): 요청 데이터. 기본값은 None
+        member_id (Optional[int], optional): 회원 ID. 기본값은 None
+        trainer_id (Optional[int], optional): 트레이너 ID. 기본값은 None
         
     Returns:
         Dict: API 응답 데이터
     """
     url = f"{API_BASE_URL}/{endpoint}"
     headers = {
-        "Authorization": f"Bearer {AUTH_TOKEN}",
         "Content-Type": "application/json"
     }
     
+    # 요청 데이터에 member_id 또는 trainer_id 추가
+    if data is None:
+        data = {}
+    
+    if member_id:
+        data["memberId"] = member_id
+    elif trainer_id:
+        data["trainerId"] = trainer_id
+    
     try:
         if method == "GET":
-            response = httpx.get(url, headers=headers)
+            response = httpx.get(url, headers=headers, params=data)
         elif method == "POST":
             response = httpx.post(url, json=data, headers=headers)
         elif method == "PUT":
@@ -124,12 +124,13 @@ def check_future_date(start_dt: datetime) -> str:
     except Exception as e:
         return f"미래 날짜 확인 중 오류가 발생했습니다: {str(e)}"
 
-def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
+def check_existing_schedule(start_dt: datetime, end_dt: datetime, trainer_id: int) -> str:
     """해당 시간대에 이미 예약이 있는지 확인합니다.
     
     Args:
         start_dt (datetime): 예약 시작 시간
         end_dt (datetime): 예약 종료 시간
+        trainer_id (int): 트레이너 ID
         
     Returns:
         str: 중복 예약이 있는 경우 에러 메시지, 없는 경우 None
@@ -137,42 +138,10 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
     try:
         print("[DEBUG] check_existing_schedule 함수 시작")
         print(f"[DEBUG] 입력된 시간 - 시작: {start_dt}, 종료: {end_dt}")
+        print(f"[DEBUG] 트레이너 ID: {trainer_id}")
         
-        # pt_contract_id로 trainer_id 찾기
-        pt_contract_id, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
-        print(f"[DEBUG] 토큰에서 추출한 pt_contract_id: {pt_contract_id}, trainer_id: {trainer_id}")
-        
-        if pt_contract_id == 0:
-            print("[DEBUG] pt_contract_id가 0입니다")
-            return "트레이너 정보를 찾을 수 없습니다."
-            
-        trainer_query = f"""
-            SELECT trainer_id
-            FROM pt_contract
-            WHERE id = {pt_contract_id}
-            LIMIT 1;
-        """
-        print(f"[DEBUG] trainer_id 조회 쿼리: {trainer_query}")
-        
-        trainer_result = execute_query(trainer_query)
-        print(f"[DEBUG] trainer_id 조회 결과: {trainer_result}")
-        
-        if not trainer_result or trainer_result == "데이터가 없습니다.":
-            print("[DEBUG] trainer_result가 없거나 '데이터가 없습니다'")
-            return "트레이너 정보를 찾을 수 없습니다."
-            
-        # 문자열에서 숫자만 추출
-        if isinstance(trainer_result, str):
-            # 괄호 안의 숫자만 추출
-            numbers = re.findall(r'\d+', trainer_result)
-            if numbers:
-                trainer_id = int(numbers[0])
-                print(f"[DEBUG] 추출된 trainer_id: {trainer_id}")
-            else:
-                print("[DEBUG] trainer_result에서 숫자를 추출할 수 없습니다")
-                return "트레이너 정보를 찾을 수 없습니다."
-        else:
-            print("[DEBUG] trainer_result가 문자열이 아님")
+        if trainer_id == 0:
+            print("[DEBUG] trainer_id가 0입니다")
             return "트레이너 정보를 찾을 수 없습니다."
         
         start_time_str = start_dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -234,10 +203,12 @@ def check_existing_schedule(start_dt: datetime, end_dt: datetime) -> str:
         return f"예약 중복 확인 중 오류가 발생했습니다: {str(e)}"
 
 @tool
-def get_user_schedule(input: str = "") -> str:
+def get_user_schedule(member_id: int, user_type: str, input: str = "") -> str:
     """사용자의 스케줄을 조회합니다.
     
     Args:
+        member_id (int): 회원 또는 트레이너 ID
+        user_type (str): 사용자 타입 ("MEMBER" 또는 "TRAINER")
         input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
         
     Returns:
@@ -245,19 +216,29 @@ def get_user_schedule(input: str = "") -> str:
     """
     try:
         print(f"[DEBUG] get_user_schedule 시작 - 입력: {input}")
+        print(f"[DEBUG] 사용자 타입: {user_type}, 회원 ID: {member_id}")
         
-        # 토큰에서 user_type 추출
-        decoded = jwt.decode(AUTH_TOKEN, options={"verify_signature": False})
-        user_type = decoded.get("userType", "")
-        print(f"[DEBUG] 사용자 타입: {user_type}")
+        if member_id == 0:
+            return json.dumps({
+                "success": False,
+                "error": "회원 정보를 찾을 수 없습니다. 회원 ID를 확인해 주세요."
+            }, ensure_ascii=False)
         
         # 트레이너인 경우 get_trainer_schedule 함수 사용
         if user_type == "TRAINER":
             print("[DEBUG] 트레이너로 확인됨 - get_trainer_schedule 함수 호출")
-            return get_trainer_schedule(input)
+            return get_trainer_schedule(member_id, input)
+            
+        # 회원인 경우, 계약 정보 조회
+        pt_contract_id, trainer_id = get_pt_contract_info(member_id)
+        if pt_contract_id == 0:
+            return json.dumps({
+                "success": False,
+                "error": "등록된 PT 계약 정보가 없습니다."
+            }, ensure_ascii=False)
             
         # 전체 일정 조회
-        schedules = make_api_request("pt_schedules")
+        schedules = make_api_request("pt_schedules", member_id=member_id)
         print(f"[DEBUG] 전체 일정 조회 결과: {schedules}")
         
         # 상대적인 날짜 처리
@@ -318,10 +299,11 @@ def get_user_schedule(input: str = "") -> str:
 
 
 @tool
-def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
+def add_schedule(member_id: int, day: str, hour: str, month: Optional[str] = None) -> str:
     """스케줄을 추가합니다.
     
     Args:
+        member_id (int): 회원 ID
         day (str): 예약 날짜
         hour (str): 예약 시간
         month (Optional[str], optional): 예약 월. 기본값은 None
@@ -346,19 +328,19 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
                 "error": error
             }, ensure_ascii=False)
 
-        error = check_existing_schedule(start_dt, end_dt)
+        # 회원 ID로 PT 계약 정보 조회
+        pt_contract_id, trainer_id = get_pt_contract_info(member_id)
+        if pt_contract_id == 0:
+            return json.dumps({
+                "success": False,
+                "error": "유효한 PT 계약 정보를 찾을 수 없습니다."
+            }, ensure_ascii=False)
+
+        error = check_existing_schedule(start_dt, end_dt, trainer_id)
         if error:
             return json.dumps({
                 "success": False,
                 "error": error
-            }, ensure_ascii=False)
-
-        # 토큰에서 ptContractId 추출
-        pt_contract_id, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
-        if pt_contract_id == 0:
-            return json.dumps({
-                "success": False,
-                "error": "유효하지 않은 토큰입니다."
             }, ensure_ascii=False)
 
         schedule_data = {
@@ -367,7 +349,7 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
             "endTime": int(end_dt.timestamp())
         }
 
-        response = make_api_request("pt_schedules", "POST", schedule_data)
+        response = make_api_request("pt_schedules", "POST", schedule_data, member_id=member_id)
         
         if not isinstance(response, dict):
             return json.dumps({
@@ -418,6 +400,7 @@ def add_schedule(day: str, hour: str, month: Optional[str] = None) -> str:
 
 @tool
 def modify_schedule(
+    member_id: int,
     day: str,
     hour: str,
     action: str,
@@ -429,6 +412,7 @@ def modify_schedule(
     """예약을 취소하거나 변경합니다.
     
     Args:
+        member_id (int): 회원 ID
         day (str): 현재 예약 날짜
         hour (str): 현재 예약 시간
         action (str): 수행할 작업 ('cancel' 또는 'change')
@@ -442,6 +426,7 @@ def modify_schedule(
     """
     try:
         print(f"[DEBUG] 함수 시작 - 입력 파라미터:")
+        print(f"  - member_id: {member_id}")
         print(f"  - day: {day}")
         print(f"  - hour: {hour}")
         print(f"  - action: {action}")
@@ -452,8 +437,16 @@ def modify_schedule(
         
         # 전체 일정 조회
         print("[DEBUG] 전체 일정 조회 시작")
-        all_schedules_response = make_api_request("pt_schedules")
+        all_schedules_response = make_api_request("pt_schedules", member_id=member_id)
         print(f"[DEBUG] 전체 일정 조회 결과: {all_schedules_response}")
+        
+        # 회원 ID로 PT 계약 정보 조회
+        pt_contract_id, trainer_id = get_pt_contract_info(member_id)
+        if pt_contract_id == 0:
+            return json.dumps({
+                "success": False,
+                "error": "유효한 PT 계약 정보를 찾을 수 없습니다."
+            }, ensure_ascii=False)
         
         # API 응답이 리스트인 경우 직접 사용
         if isinstance(all_schedules_response, list):
@@ -544,7 +537,8 @@ def modify_schedule(
             cancel_response = make_api_request(
                 f"pt_schedules/{target_schedule.get('id')}/cancel",
                 "PATCH",
-                cancel_data
+                cancel_data,
+                member_id=member_id
             )
             print(f"[DEBUG] cancel response: {cancel_response}")
             
@@ -620,7 +614,7 @@ def modify_schedule(
                     "error": error
                 }, ensure_ascii=False)
             
-            error = check_existing_schedule(start_dt, end_dt)
+            error = check_existing_schedule(start_dt, end_dt, trainer_id)
             if error:
                 print(f"[DEBUG] existing schedule check error: {error}")
                 return json.dumps({
@@ -638,7 +632,8 @@ def modify_schedule(
             change_response = make_api_request(
                 f"pt_schedules/{target_schedule.get('id')}/change",
                 "PATCH",
-                change_data
+                change_data,
+                member_id=member_id
             )
             print(f"[DEBUG] change response: {change_response}")
             
@@ -692,20 +687,21 @@ def modify_schedule(
         }, ensure_ascii=False)
 
 @tool
-def get_trainer_schedule(input: str = "") -> str:
+def get_trainer_schedule(trainer_id: int, input: str = "", auth_token: str = None) -> str:
     """트레이너의 모든 회원 일정을 조회합니다.
     
     Args:
+        trainer_id (int): 트레이너 ID
         input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
+        auth_token (str, optional): 인증 토큰. 기본값은 None
         
     Returns:
         str: JSON 형식의 스케줄 정보
     """
     try:
         print(f"[DEBUG] get_trainer_schedule 시작 - 입력: {input}")
+        print(f"[DEBUG] 트레이너 ID: {trainer_id}")
         
-        # 토큰에서 trainer_id 추출
-        _, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
         if trainer_id == 0:
             return json.dumps({
                 "success": False,
@@ -779,12 +775,14 @@ def get_trainer_schedule(input: str = "") -> str:
         }, ensure_ascii=False)
 
 @tool
-def get_member_schedule(member_name: str, input: str = "") -> str:
+def get_member_schedule(trainer_id: int, member_name: str, input: str = "", auth_token: str = None) -> str:
     """트레이너가 특정 회원의 일정을 조회합니다.
     
     Args:
+        trainer_id (int): 트레이너 ID
         member_name (str): 회원 이름
         input (str, optional): 날짜 범위를 나타내는 자연어 (예: "오늘", "이번 주", "다음 주"). 기본값은 ""
+        auth_token (str, optional): 인증 토큰. 기본값은 None
         
     Returns:
         str: JSON 형식의 스케줄 정보
@@ -792,16 +790,12 @@ def get_member_schedule(member_name: str, input: str = "") -> str:
     try:
         print(f"[DEBUG] ===== get_member_schedule 함수 시작 =====")
         print(f"[DEBUG] 입력 파라미터:")
+        print(f"  - trainer_id: {trainer_id}")
         print(f"  - member_name: {member_name}")
         print(f"  - input: {input}")
         
-        # 토큰에서 trainer_id 추출
-        print("[DEBUG] 토큰에서 trainer_id 추출 시도")
-        _, trainer_id = get_pt_contract_id_from_token(AUTH_TOKEN)
-        print(f"[DEBUG] 추출된 trainer_id: {trainer_id}")
-        
         if trainer_id == 0:
-            print("[DEBUG] 트레이너 ID 추출 실패")
+            print("[DEBUG] 트레이너 ID가 0")
             return json.dumps({
                 "success": False,
                 "error": "트레이너 정보를 찾을 수 없습니다."

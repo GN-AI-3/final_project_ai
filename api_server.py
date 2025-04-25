@@ -1,7 +1,7 @@
 """
 API 서버 - FastAPI 기반 RestAPI 엔드포인트 정의 (수정본)
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
