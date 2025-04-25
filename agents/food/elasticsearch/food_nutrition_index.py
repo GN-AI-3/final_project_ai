@@ -154,20 +154,33 @@ async def search_food(query: str):
     }
 
 # ✅ 서버 시작 시 데이터베이스 및 Elasticsearch 연결 (이제 초기화 API에서 연결하므로 선택 사항)
-@app.on_event("startup")
-async def startup_event():
-    print("🚀 서버 시작!")
-    # connect_db()
-    # connect_es()
+# async def startup_event():
+#     print("🚀 서버 시작!")
+#     # connect_db()
+#     # connect_es()
 
-# ✅ 서버 종료 시 데이터베이스 연결 종료 (선택 사항)
-@app.on_event("shutdown")
-async def shutdown_event():
-    if pg_conn:
-        pg_conn.close()
-        print("🚪 PostgreSQL 연결 종료!")
+# # ✅ 서버 종료 시 데이터베이스 연결 종료 (선택 사항)
+# async def shutdown_event():
+#     if pg_conn:
+#         pg_conn.close()
+#         print("🚪 PostgreSQL 연결 종료!")
 
 # ✅ 실행 (uvicorn으로 실행해야 함)
 # if __name__ == "__main__":
 #     import uvicorn
 #     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+
+
+def initialize_elasticsearch2():
+    connect_es()
+    connect_db()
+    try:
+        recreate_elasticsearch_index()
+        sync_result = sync_food_names_to_elasticsearch()
+        return {"recreate_index_status": "success", "sync_status": sync_result["message"]}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Elasticsearch 초기화 실패: {str(e)}")
+
+initialize_elasticsearch2()

@@ -67,3 +67,5 @@ firebase-service-account-key.json
 agents/food/food_data/
 agents/food/elasticsearch/rag/recipes/
 agents/food/elasticsearch/rag/recipes/ 
+
+docker-compose2.yml
