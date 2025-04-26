@@ -69,26 +69,30 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         "Content-Type": "application/json"
     }
     
-    # 요청 데이터에 member_id 또는 trainer_id 추가
+    # 요청 데이터 초기화
     if data is None:
         data = {}
     
+    # 쿼리 파라미터 초기화
+    params = {}
+    
+    # memberId와 trainerId를 쿼리 파라미터로 설정
     if member_id:
-        data["memberId"] = member_id
+        params["memberId"] = member_id
     elif trainer_id:
-        data["trainerId"] = trainer_id
+        params["trainerId"] = trainer_id
     
     try:
         if method == "GET":
-            response = httpx.get(url, headers=headers, params=data)
+            response = httpx.get(url, headers=headers, params=params)
         elif method == "POST":
-            response = httpx.post(url, json=data, headers=headers)
+            response = httpx.post(url, json=data, headers=headers, params=params)
         elif method == "PUT":
-            response = httpx.put(url, json=data, headers=headers)
+            response = httpx.put(url, json=data, headers=headers, params=params)
         elif method == "DELETE":
-            response = httpx.delete(url, headers=headers)
+            response = httpx.delete(url, headers=headers, params=params)
         elif method == "PATCH":
-            response = httpx.patch(url, json=data, headers=headers)
+            response = httpx.patch(url, json=data, headers=headers, params=params)
         else:
             raise ValueError(f"지원하지 않는 HTTP 메서드입니다: {method}")
         
