@@ -24,6 +24,7 @@ async def build_agent_context(
     message: str,
     chat_history: List[Dict[str, Any]] = None,
     request_id: str = None,
+    qdrant_events: str = None,
 ) -> str:
     """
     Builds context summary information based on user message and chat history.
@@ -32,6 +33,7 @@ async def build_agent_context(
         message: The user's message.
         chat_history: The chat history in the format [{role: "user", content: "..."}, {role: "assistant", content: "..."}].
         request_id: The unique identifier for the current request.
+        qdrant_events: Event information from Qdrant.
         
     Returns:
         A JSON string containing context information.
@@ -42,6 +44,9 @@ async def build_agent_context(
     
     if chat_history is None:
         chat_history = []
+    
+    if qdrant_events is None:
+        qdrant_events = ""
     
     logger.info(f"[{request_id}] [build_agent_context] 문맥 정보 생성 시작")
 
@@ -54,7 +59,8 @@ async def build_agent_context(
     # 프롬프트 조합
     prompt_text = AGENT_CONTEXT_BUILDING_PROMPT.format(
         chat_history=formatted_history,
-        message=message
+        message=message,
+        qdrant_events=qdrant_events
     )
 
     # 프롬프트 로깅 (debug 레벨로만 기록)
