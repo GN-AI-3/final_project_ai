@@ -1,0 +1,45 @@
+# .github/workflows/deploy_ai.yml
+name: Deploy AI Server to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Load SSH key into ssh-agent
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      - name: SSH & Deploy AI Server
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ubuntu
+        run: |
+          ssh -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
+            cd /home/ubuntu/final_project_ai
+
+            echo "[1] Pull latest code"
+            git pull origin main
+
+            echo "[2] Stop existing containers"
+            docker-compose down || true
+
+            echo "[3] Prune only dangling images"
+            docker image prune -af || true
+
+            echo "[4] Pull all service images (fastapi will be built locally)"
+            docker-compose pull || true
+
+            echo "[5] Build & start services"
+            docker-compose up --build -d
+
+            echo "[6] Deployment finished"
+          EOF
