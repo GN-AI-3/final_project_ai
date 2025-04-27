@@ -97,10 +97,30 @@ class Supervisor:
 
             # 1) 문맥 정보 생성
             logger.info(f"[{request_id}] (1) 문맥 정보 생성 시작")
+            
+            # QDrant에서 사용자 이벤트 정보 가져오기 
+            qdrant_events = ""
+            if user_id:
+                try:
+                    from supervisor_modules.utils.qdrant_helper import get_user_events
+                    import asyncio
+                    
+                    # 사용자 ID 형식 변환 - 테스트 환경에서는 항상 user1@test.com 사용
+                    # 실제 환경에서는 DB에서 이메일 조회 또는 매핑 로직이 필요함
+                    qdrant_user_id = "user1@test.com"  # 테스트용 하드코딩
+                    logger.info(f"[{request_id}] 테스트 환경: 사용자 ID {user_id}를 {qdrant_user_id}로 매핑")
+                    
+                    qdrant_events = await get_user_events(qdrant_user_id)
+                    logger.info(f"[{request_id}] QDrant 이벤트 정보 조회 완료")
+                except Exception as e:
+                    logger.warning(f"[{request_id}] QDrant 이벤트 정보 조회 실패: {e}")
+                    qdrant_events = ""
+            
             context_info = await build_agent_context(
                 message=message, 
                 chat_history=chat_history,
-                request_id=request_id
+                request_id=request_id,
+                qdrant_events=qdrant_events
             )
             logger.info(f"[{request_id}] (1) 문맥 정보 생성 완료: {len(context_info)}")
 
