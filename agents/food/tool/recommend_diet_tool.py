@@ -59,7 +59,7 @@ load_dotenv()
 
 es = Elasticsearch(
     os.getenv("ELASTICSEARCH_HOST"),
-    http_auth=(os.getenv("ELASTICSEARCH_USERNAME"), os.getenv("ELASTICSEARCH_PASSWORD"))
+    bearer_auth=os.getenv("ELASTICSEARCH_SERVICE_TOKEN")
 )
 
 def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
