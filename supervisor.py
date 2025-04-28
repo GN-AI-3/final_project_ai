@@ -105,8 +105,6 @@ class Supervisor:
                     from supervisor_modules.utils.qdrant_helper import get_user_events
                     import asyncio
                     
-                    # 사용자 ID 형식 변환 - 테스트 환경에서는 항상 user1@test.com 사용
-                    # 실제 환경에서는 DB에서 이메일 조회 또는 매핑 로직이 필요함
                     qdrant_user_id = member_id
                     logger.info(f"[{request_id}] 테스트 환경: 사용자 ID {user_id}를 {qdrant_user_id}로 매핑")
                     

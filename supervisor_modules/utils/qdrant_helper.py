@@ -38,22 +38,22 @@ def get_qdrant_client() -> QdrantClient:
         
         if api_key:
             client = QdrantClient(url=qdrant_url, api_key=api_key)
-            logger.info(f"✅ QDrant 클라이언트 초기화 성공 (URL: {qdrant_url})")
+            logger.info(f"[성공] QDrant 클라이언트 초기화 성공 (URL: {qdrant_url})")
         else:
             # API 키가 없으면 URL만으로 시도
             client = QdrantClient(url=qdrant_url)
-            logger.info(f"✅ QDrant 클라이언트 초기화 성공 (API 키 없음, URL: {qdrant_url})")
+            logger.info(f"[성공] QDrant 클라이언트 초기화 성공 (API 키 없음, URL: {qdrant_url})")
             
         return client
     except Exception as e:
-        logger.error(f"❌ QDrant 클라이언트 초기화 실패: {str(e)}")
+        logger.error(f"[실패] QDrant 클라이언트 초기화 실패: {str(e)}")
         # 로컬 개발용 fallback
         try:
             client = QdrantClient(host="localhost", port=6333)
-            logger.info("✅ QDrant 클라이언트 초기화 성공 (로컬 연결)")
+            logger.info("[성공] QDrant 클라이언트 초기화 성공 (로컬 연결)")
             return client
         except Exception:
-            logger.error("❌ 로컬 QDrant 연결도 실패, 더미 클라이언트 반환")
+            logger.error("[실패] 로컬 QDrant 연결도 실패, 더미 클라이언트 반환")
             # 연결 실패 시 더미 클라이언트 반환
             return QdrantClient(host="localhost", port=6333)
 
@@ -266,7 +266,7 @@ async def get_user_events(email: str, message: str) -> str:
 
             search_result = client.search(
                 collection_name=collection_name,
-                query_vector=embedding,  # ★ 검색할 벡터 (이거 필요함!!)
+                query_vector=embedding,
                 query_filter=models.Filter(
                     must=[
                         models.FieldCondition(
@@ -275,13 +275,12 @@ async def get_user_events(email: str, message: str) -> str:
                         )
                     ]
                 ),
-                score_threshold=1,
-                limit=3  # ★ 필요한 만큼 설정 (안 걸면 디폴트 10개)
+                score_threshold=0.6,
+                limit=3
             )
             
             logger.info(f"{len(search_result)}개의 검색 결과 찾음")
             
-            # 검색 결과 목록 로깅 (최대 3개)
             if search_result:
                 print("search_result: ", search_result)
                 for i, point in enumerate(search_result[:3]):
