@@ -11,11 +11,22 @@ from datetime import datetime, timedelta
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+from qdrant_utils.data_analyzer import DataAnalyzer
 
 from supervisor_modules.utils.logger_setup import get_logger
+import psycopg2
 
 # 로거 설정
 logger = get_logger(__name__)
+data_analyzer = DataAnalyzer()
+
+DB_CONFIG = {
+    "dbname": os.getenv("DB_DB"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT")
+}
 
 # QDrant 클라이언트 초기화
 def get_qdrant_client() -> QdrantClient:
@@ -174,7 +185,7 @@ async def search_relevant_conversations(email: str, query: str) -> str:
         logger.error(f"관련 대화 검색 중 오류 발생: {str(e)}")
         return "관련된 과거 대화 정보를 가져오는 중 오류가 발생했습니다."
 
-async def get_user_events(email: str) -> str:
+async def get_user_events(email: str, message: str) -> str:
     """
     QDrant에서 사용자의 이벤트 정보만 검색합니다.
     
@@ -188,6 +199,24 @@ async def get_user_events(email: str) -> str:
     if os.getenv("DISABLE_QDRANT", "false").lower() == "true":
         logger.info("Qdrant 기능이 비활성화되어 있습니다.")
         return ""
+
+    query = """
+        SELECT email FROM member
+        WHERE id = %s
+    """
+    params = (email,)
+
+    try:
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                column_names = [desc[0] for desc in cursor.description]
+
+                result = [dict(zip(column_names, row)) for row in rows]
+                member_email = result[0]['email']
+    except Exception as e:
+        return json.dumps({"error": f"Database error: {str(e)}"})
         
     try:
         # 연결 시도
@@ -196,7 +225,7 @@ async def get_user_events(email: str) -> str:
             
             # 서버 연결 테스트
             client.get_collections()
-            logger.info(f"Qdrant 서버 연결 성공, 사용자 '{email}' 검색 시작")
+            logger.info(f"Qdrant 서버 연결 성공, 사용자 '{member_email}' 검색 시작")
         except Exception as conn_err:
             logger.warning(f"Qdrant 서버 연결 실패: {str(conn_err)}. 빈 이벤트 정보 반환.")
             return ""
@@ -220,23 +249,41 @@ async def get_user_events(email: str) -> str:
         
         # 사용자 데이터 검색 - 간소화된 필터로 먼저 시도 (타임스탬프 필터 제외)
         try:
-            search_result = client.scroll(
+            # search_result = client.scroll(
+            #     collection_name=collection_name,
+            #     scroll_filter=models.Filter(
+            #         must=[
+            #             models.FieldCondition(
+            #                 key="user_email",
+            #                 match=models.MatchValue(value=member_email)
+            #             )
+            #         ]
+            #     ),
+            #     limit=10  # 더 많은 결과 가져오기
+            # )[0]
+
+            embedding = await data_analyzer.generate_embeddings(message)
+
+            search_result = client.search(
                 collection_name=collection_name,
-                scroll_filter=models.Filter(
+                query_vector=embedding,  # ★ 검색할 벡터 (이거 필요함!!)
+                query_filter=models.Filter(
                     must=[
                         models.FieldCondition(
                             key="user_email",
-                            match=models.MatchValue(value=email)
+                            match=models.MatchValue(value=member_email)
                         )
                     ]
                 ),
-                limit=10  # 더 많은 결과 가져오기
-            )[0]
+                score_threshold=1,
+                limit=3  # ★ 필요한 만큼 설정 (안 걸면 디폴트 10개)
+            )
             
             logger.info(f"{len(search_result)}개의 검색 결과 찾음")
             
             # 검색 결과 목록 로깅 (최대 3개)
             if search_result:
+                print("search_result: ", search_result)
                 for i, point in enumerate(search_result[:3]):
                     if hasattr(point, 'id'):
                         logger.info(f"결과 {i+1}: ID={point.id}")
@@ -248,6 +295,7 @@ async def get_user_events(email: str) -> str:
             return ""
         
         if not search_result:
+            print("search_result: 없음")
             logger.info(f"사용자 {email}에 대한 이벤트 정보가 없습니다.")
             return ""
         
