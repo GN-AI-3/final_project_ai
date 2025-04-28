@@ -21,7 +21,7 @@ index_name = "food_nutrition_index"
 
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
+    "user": os.getenv("DB_DB"),
     "password": os.getenv("DB_PASSWORD"),
     "host": os.getenv("DB_HOST"),
     "port": os.getenv("DB_PORT")
