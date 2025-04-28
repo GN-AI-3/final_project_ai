@@ -57,9 +57,12 @@ agents_food_dir = Path(__file__).parent.parent
 # 환경 변수 로드
 load_dotenv()
 
+elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME")
+elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD")
+
 es = Elasticsearch(
     os.getenv("ELASTICSEARCH_HOST"),
-    bearer_auth=os.getenv("ELASTICSEARCH_SERVICE_ACCOUNT_TOKEN")
+    http_auth=(elasticsearch_username, elasticsearch_password)
 )
 
 def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:

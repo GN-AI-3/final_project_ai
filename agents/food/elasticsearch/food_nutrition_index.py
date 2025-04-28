@@ -27,6 +27,9 @@ DB_CONFIG = {
     "port": os.getenv("DB_PORT")
 }
 
+elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME")
+elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD")
+
 # Elasticsearch 연결 (전역 변수로 관리)
 def connect_db():
     global pg_conn, pg_cur
@@ -41,7 +44,7 @@ def connect_es():
     try:
         es = Elasticsearch(
             os.getenv("ELASTICSEARCH_HOST"),
-            bearer_auth=os.getenv("ELASTICSEARCH_SERVICE_ACCOUNT_TOKEN")
+            http_auth=(elasticsearch_username, elasticsearch_password)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Elasticsearch 연결 실패: {str(e)}")
