@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # .env에서 사용자 인증 정보 불러오기
-elasticsearch_host = os.getenv("ELASTICSEARCH_HOST", "http://elasticsearch:9200")
-elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME", "elastic")
-elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD", "1234")
+elasticsearch_host = os.getenv("ELASTICSEARCH_HOST")
+elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME")
+elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD")
 
 # Elasticsearch 연결 (사용자 인증 포함)
 es = Elasticsearch(
