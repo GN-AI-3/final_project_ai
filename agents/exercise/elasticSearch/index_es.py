@@ -5,7 +5,14 @@ import psycopg2
 
 load_dotenv()
 
-es = Elasticsearch("http://elasticsearch:9200").options(ignore_status=400)
+elasticsearch_host = os.getenv("ELASTICSEARCH_HOST")
+elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME")
+elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD")
+
+es = Elasticsearch(
+    elasticsearch_host,
+    http_auth=(elasticsearch_username, elasticsearch_password)
+).options(ignore_status=400)
 
 exercise_index_name = "exercises"
 

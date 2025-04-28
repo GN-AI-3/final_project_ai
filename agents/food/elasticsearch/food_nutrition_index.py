@@ -1,33 +1,50 @@
-from elasticsearch import Elasticsearch
-import psycopg2
+from langchain.tools import tool
 from fastapi import FastAPI, HTTPException
+import os
+import psycopg2
+import json
+from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
+from dotenv import load_dotenv
+from psycopg2 import sql
+
+load_dotenv()
+
 
 app = FastAPI()
 
-# Elasticsearch 연결
-es = Elasticsearch("http://elasticsearch:9200")
-# PostgreSQL 연결 (전역 변수로 관리)
 pg_conn = None
 pg_cur = None
 
-# Elasticsearch 연결 (전역 변수로 관리)
 es = None
 index_name = "food_nutrition_index"
 
+DB_CONFIG = {
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT")
+}
+
+# Elasticsearch 연결 (전역 변수로 관리)
 def connect_db():
     global pg_conn, pg_cur
-    pg_conn = psycopg2.connect(
-        host="3.37.8.185",
-        port=5433,
-        dbname="gym",
-        user="postgres",
-        password="1234"
-    )
-    pg_cur = pg_conn.cursor()
+    try:
+        pg_conn = psycopg2.connect(**DB_CONFIG)
+        pg_cur = pg_conn.cursor()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PostgreSQL 연결 실패: {str(e)}")
 
 def connect_es():
     global es
-    es = Elasticsearch("http://elasticsearch:9200")
+    try:
+        es = Elasticsearch(
+            os.getenv("ELASTICSEARCH_HOST"),
+            http_auth=(os.getenv("ELASTICSEARCH_USERNAME"), os.getenv("ELASTICSEARCH_PASSWORD"))
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Elasticsearch 연결 실패: {str(e)}")
 
 # ✅ 인덱스 재생성 (자동완성 + 오타 대응 설정 포함)
 def recreate_elasticsearch_index():
@@ -71,8 +88,6 @@ def recreate_elasticsearch_index():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Elasticsearch 인덱스 재생성 실패: {str(e)}")
 
-from elasticsearch.helpers import bulk
-# ✅ 음식명 전체 동기화
 # ✅ 음식명 전체 동기화 (bulk 버전)
 def sync_food_names_to_elasticsearch():
     try:
@@ -99,7 +114,7 @@ async def initialize_elasticsearch():
     connect_es()
     connect_db()
     try:
-        recreate_elasticsearch_index()
+        recreate_index_status = recreate_elasticsearch_index()
         sync_result = sync_food_names_to_elasticsearch()
         return {"recreate_index_status": "success", "sync_status": sync_result["message"]}
     except HTTPException as http_exc:
@@ -110,77 +125,47 @@ async def initialize_elasticsearch():
 # ✅ 검색 with 자동완성 + 오타 (API 엔드포인트 유지)
 @app.get("/search")
 async def search_food(query: str):
-    # ... (기존 search_food 코드와 동일)
-    body = {
-        "query": {
-            "bool": {
-                "should": [
-                    {
-                        "match": {
-                            "name": {
-                                "query": query,
-                                "fuzziness": "AUTO"
+    try:
+        body = {
+            "query": {
+                "bool": {
+                    "should": [
+                        {
+                            "match": {
+                                "name": {
+                                    "query": query,
+                                    "fuzziness": "AUTO"
+                                }
+                            }
+                        },
+                        {
+                            "match_phrase_prefix": {
+                                "name": {
+                                    "query": query
+                                }
                             }
                         }
-                    },
-                    {
-                        "match_phrase_prefix": {
-                            "name": {
-                                "query": query
-                            }
-                        }
-                    }
-                ]
+                    ]
+                }
             }
         }
-    }
 
-    results = es.search(index=index_name, body=body)
+        results = es.search(index=index_name, body=body)
 
-    if not results["hits"]["hits"]:
-        return {"message": f"검색 결과 없음: '{query}'"}
+        if not results["hits"]["hits"]:
+            return {"message": f"검색 결과 없음: '{query}'"}
 
-    top_hit = results["hits"]["hits"][0]["_source"]
-    food_id = top_hit["id"]
-    food_name = top_hit["name"]
+        top_hit = results["hits"]["hits"][0]["_source"]
+        food_id = top_hit["id"]
+        food_name = top_hit["name"]
 
-    pg_cur.execute("SELECT * FROM food_nutrition WHERE id = %s", (food_id,))
-    nutrition = pg_cur.fetchone()
+        pg_cur.execute("SELECT * FROM food_nutrition WHERE id = %s", (food_id,))
+        nutrition = pg_cur.fetchone()
 
-    return {
-        "query": query,
-        "recommendation": {"id": food_id, "name": food_name},
-        "nutrition": nutrition
-    }
-
-# ✅ 서버 시작 시 데이터베이스 및 Elasticsearch 연결 (이제 초기화 API에서 연결하므로 선택 사항)
-# async def startup_event():
-#     print("🚀 서버 시작!")
-#     # connect_db()
-#     # connect_es()
-
-# # ✅ 서버 종료 시 데이터베이스 연결 종료 (선택 사항)
-# async def shutdown_event():
-#     if pg_conn:
-#         pg_conn.close()
-#         print("🚪 PostgreSQL 연결 종료!")
-
-# ✅ 실행 (uvicorn으로 실행해야 함)
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
-
-
-def initialize_elasticsearch2():
-    connect_es()
-    connect_db()
-    try:
-        recreate_elasticsearch_index()
-        sync_result = sync_food_names_to_elasticsearch()
-        return {"recreate_index_status": "success", "sync_status": sync_result["message"]}
-    except HTTPException as http_exc:
-        raise http_exc
+        return {
+            "query": query,
+            "recommendation": {"id": food_id, "name": food_name},
+            "nutrition": nutrition
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Elasticsearch 초기화 실패: {str(e)}")
-
-initialize_elasticsearch2()
+        raise HTTPException(status_code=500, detail=f"검색 중 오류 발생: {str(e)}")
