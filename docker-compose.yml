@@ -26,6 +26,7 @@ services:
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     volumes:
       - esdata:/usr/share/elasticsearch/data
+      - esconfig:/usr/share/elasticsearch/config
     networks:
       - ai-network
 
@@ -70,3 +71,4 @@ networks:
 
 volumes:
   esdata:
+  esconfig:
