@@ -172,3 +172,16 @@ async def search_food(query: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"검색 중 오류 발생: {str(e)}")
+
+if __name__ == "__main__":
+    print("[Standalone] Elasticsearch 인덱스 초기화 및 동기화 시작...")
+    try:
+        connect_es()
+        connect_db()
+        recreate_index_status = recreate_elasticsearch_index()
+        print(recreate_index_status)
+        sync_result = sync_food_names_to_elasticsearch()
+        print(sync_result)
+        print("[Standalone] Elasticsearch 인덱스 초기화 및 동기화 완료!")
+    except Exception as e:
+        print(f"[Standalone] 오류 발생: {e}")
