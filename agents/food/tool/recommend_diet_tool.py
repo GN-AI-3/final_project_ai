@@ -58,7 +58,7 @@ agents_food_dir = Path(__file__).parent.parent
 load_dotenv()
 
 es = Elasticsearch(
-    os.getenv("ELASTICSEARCH_URL"),
+    os.getenv("ELASTICSEARCH_HOST"),
     http_auth=(os.getenv("ELASTICSEARCH_USERNAME"), os.getenv("ELASTICSEARCH_PASSWORD"))
 )
 
