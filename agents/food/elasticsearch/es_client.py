@@ -8,7 +8,7 @@ load_dotenv()
 # .env에서 사용자 인증 정보 불러오기
 elasticsearch_host = os.getenv("ELASTICSEARCH_HOST")
 
-elasticsearch_token = os.getenv("ELASTICSEARCH_SERVICEACCOUNTTOKEN")
+elasticsearch_token = os.getenv("ELASTICSEARCH_SERVICE_ACCOUNT_TOKEN")
 es = Elasticsearch(
     elasticsearch_host,
     bearer_auth=elasticsearch_token

@@ -41,7 +41,7 @@ def connect_es():
     try:
         es = Elasticsearch(
             os.getenv("ELASTICSEARCH_HOST"),
-            bearer_auth=os.getenv("ELASTICSEARCH_SERVICE_TOKEN")
+            bearer_auth=os.getenv("ELASTICSEARCH_SERVICE_ACCOUNT_TOKEN")
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Elasticsearch 연결 실패: {str(e)}")

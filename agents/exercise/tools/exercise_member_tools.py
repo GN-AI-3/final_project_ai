@@ -14,7 +14,7 @@ from qdrant_client.models import SearchParams
 load_dotenv()
 
 elasticsearch_host = os.getenv("ELASTICSEARCH_HOST")
-elasticsearch_token = os.getenv("ELASTICSEARCH_SERVICEACCOUNTTOKEN")
+elasticsearch_token = os.getenv("ELASTICSEARCH_SERVICE_ACCOUNT_TOKEN")
 
 es = Elasticsearch(
     elasticsearch_host,
