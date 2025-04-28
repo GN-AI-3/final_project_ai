@@ -57,6 +57,11 @@ agents_food_dir = Path(__file__).parent.parent
 # 환경 변수 로드
 load_dotenv()
 
+es = Elasticsearch(
+    os.getenv("ELASTICSEARCH_URL"),
+    http_auth=(os.getenv("ELASTICSEARCH_USERNAME"), os.getenv("ELASTICSEARCH_PASSWORD"))
+)
+
 def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
     """
     스프링 부트 API를 호출하는 함수
@@ -82,9 +87,6 @@ def call_spring_api(endpoint: str, data: dict, method: str = "POST") -> dict:
 
     except requests.exceptions.RequestException as e:
         return {"error": f"API 호출 실패: {str(e)}"}
-
-# Elasticsearch 연결
-es = Elasticsearch(os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200"))
 
 # PostgreSQL 연결
 def get_db_connection():

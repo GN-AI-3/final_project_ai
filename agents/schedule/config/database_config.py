@@ -6,7 +6,7 @@ load_dotenv()
 
 # 데이터베이스 설정
 DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")  # 기본 포트 번호 5432 사용
+DB_PORT = os.getenv("DB_PORT")
 DB_DB = os.getenv("DB_DB")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
