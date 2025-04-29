@@ -1,6 +1,14 @@
 from typing import List, Dict, Any, Optional
 import json
-import jwt
+import base64
+
+try:
+    import jwt
+    # jwt 패키지가 decode 메서드를 가지고 있는지 확인
+    HAS_JWT_DECODE = hasattr(jwt, 'decode')
+except ImportError:
+    # 패키지 설치 안됨
+    HAS_JWT_DECODE = False
 
 from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
@@ -83,7 +91,9 @@ class ScheduleChatbot:
             RunnableMap({
                 "input": lambda x: x["input"],
                 "chat_history": lambda x: self._get_history(x["session_id"]).messages,
-                "agent_scratchpad": lambda x: format_to_openai_function_messages(x["intermediate_steps"])
+                "agent_scratchpad": lambda x: format_to_openai_function_messages(x["intermediate_steps"]),
+                "member_id": lambda x: x.get("member_id"),
+                "user_type": lambda x: x.get("user_type", "member")
             })
             | self.prompt
             | self.llm.bind(functions=self.functions)
@@ -93,23 +103,42 @@ class ScheduleChatbot:
         self.agent_executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
-            verbose=True
+            verbose=True,
+            return_intermediate_steps=True
         )
 
     def process_message(self, message: str, session_id: str = "default") -> str:
         """메시지를 처리하고 응답을 생성합니다.
         
         Args:
-            message: 사용자 메시지
+            message: 사용자 메시지 또는 JSON 형식의 메시지 (member_id, user_type, auth_token 포함)
             session_id: 세션 ID (기본값: "default")
             
         Returns:
             str: 생성된 응답
         """
         try:
+            # 메시지가 JSON 형식인지 확인
+            try:
+                message_data = json.loads(message)
+                text_message = message_data.get("text", message)
+                member_id = message_data.get("member_id")
+                user_type = message_data.get("user_type", "member")
+                auth_token = message_data.get("auth_token")
+            except (json.JSONDecodeError, TypeError):
+                # JSON이 아닌 경우 원래 메시지 사용
+                text_message = message
+                member_id = None
+                user_type = "member"
+                auth_token = None
+                
+            # AgentExecutor 실행 - member_id와 user_type 정보 추가
             response = self.agent_executor.invoke({
-                "input": message,
-                "session_id": session_id
+                "input": f"사용자 메시지: {text_message}" + (f" (member_id: {member_id}, user_type: {user_type})" if member_id else ""),
+                "session_id": session_id,
+                "member_id": member_id,
+                "user_type": user_type,
+                "auth_token": auth_token
             })
             
             return json.dumps({
@@ -139,7 +168,19 @@ def get_member_id_from_token(token: str) -> int:
         int: member_id, 추출 실패 시 0
     """
     try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
+        if HAS_JWT_DECODE:
+            decoded = jwt.decode(token, options={"verify_signature": False})
+        else:
+            # 수동으로 JWT 디코딩
+            token_parts = token.split('.')
+            if len(token_parts) >= 2:
+                # 패딩 추가
+                padded = token_parts[1] + '=' * (4 - len(token_parts[1]) % 4)
+                # base64 디코딩 후 JSON 파싱
+                decoded = json.loads(base64.b64decode(padded).decode('utf-8'))
+            else:
+                return 0
+        
         return decoded.get("id", 0)
     except Exception:
         return 0

@@ -177,6 +177,17 @@ def planning(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
             "tool_descriptions": json.dumps(TOOL_DESCRIPTIONS_FOR_TRAINER, indent=2, ensure_ascii=False),
             "feedback": feedback
         })
+    else:
+        # 기본적으로 trainer 설정을 사용 (미확인 user_type일 경우)
+        print(f"Warning: Unknown user_type '{state.user_type}', using trainer settings as default")
+        response = agent_executor.invoke({
+            "message": message,
+            "member_id": None,
+            "trainer_id": trainer_id,
+            "table_schema": json.dumps(TABLE_SCHEMA_FOR_TRAINER, indent=2, ensure_ascii=False),
+            "tool_descriptions": json.dumps(TOOL_DESCRIPTIONS_FOR_TRAINER, indent=2, ensure_ascii=False),
+            "feedback": feedback
+        })
 
     print("exercise planning response: ", response["output"])
     state.plan = response["output"]

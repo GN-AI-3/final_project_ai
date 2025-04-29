@@ -116,6 +116,16 @@ def _parse_hour(hour_str: Union[str, int]) -> Tuple[Optional[int], Optional[str]
     try:
         original = str(hour_str)  # int → str 변환 추가
         hour_str = original.lower().strip().replace(" ", "")
+        
+        # HH:MM 형식 처리 (예: "19:00")
+        if ":" in hour_str:
+            time_parts = hour_str.split(":")
+            if len(time_parts) == 2:
+                hour = int(time_parts[0])
+                if 0 <= hour <= 23:
+                    return hour, None
+                else:
+                    return None, "24시간 형식에서는 0부터 23 사이의 숫자를 입력해주세요."
 
         is_am = None
         if "오전" in hour_str or "am" in hour_str:
@@ -152,7 +162,7 @@ def _parse_hour(hour_str: Union[str, int]) -> Tuple[Optional[int], Optional[str]
         return hour, None
 
     except Exception as e:
-        return None, "시간 형식이 잘못됐어요. 예: '오전 10시', '오후 다섯시', '15시'"
+        return None, "시간 형식이 잘못됐어요. 예: '오전 10시', '오후 다섯시', '15시', '19:00'"
 
 
 def validate_date_format(

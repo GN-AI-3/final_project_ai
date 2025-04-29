@@ -11,6 +11,8 @@ data/
 venv/
 env/
 .env/
+.env.kibana
+.env.kibana/
 
 # IDE 설정 파일
 # Python

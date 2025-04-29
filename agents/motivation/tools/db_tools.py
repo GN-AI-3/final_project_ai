@@ -40,11 +40,11 @@ class DBConnectionTool:
             
             # 연결 생성
             connection = psycopg2.connect(
-                host=db_host or "localhost",
-                port=db_port or "5433", 
-                dbname=db_name or "gym",
-                user=db_user or "postgres",
-                password=db_password or "1234"
+                host=db_host,
+                port=db_port, 
+                dbname=db_name,
+                user=db_user,
+                password=db_password
             )
             
             return connection

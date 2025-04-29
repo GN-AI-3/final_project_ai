@@ -82,6 +82,10 @@ def execute_plan(state: RoutingState, llm: ChatOpenAI) -> RoutingState:
         tools = tools_for_member
     elif user_type == "trainer":
         tools = tools_for_trainer
+    else:
+        # 기본적으로 trainer 설정을 사용 (미확인 user_type일 경우)
+        print(f"Warning: Unknown user_type '{user_type}' in execute_plan, using trainer settings as default")
+        tools = tools_for_trainer
 
     for idx, step in enumerate(plan):
         # step이 문자열인 경우 처리
