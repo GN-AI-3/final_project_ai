@@ -1,11 +1,18 @@
 # retry_node.py
 import json
+import re
 from langchain.schema import HumanMessage
 from agents.food.llm_config import llm
 from agents.food.tool.recommend_diet_tool import tool_list
 from agents.food.agent_state import AgentState
 
+# tool 이름 → tool 객체 매핑
 tool_map = {tool.name: tool for tool in tool_list}
+
+def extract_json_block(text: str) -> str:
+    """텍스트에서 JSON 블록 추출 (```json ... ``` 안 or 그냥 { ... } 형태)"""
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    return match.group(0) if match else "{}"
 
 def retry_node(state: AgentState) -> AgentState:
     parsed_plan = state.parsed_plan or {}
@@ -15,130 +22,122 @@ def retry_node(state: AgentState) -> AgentState:
     member_id = state.member_id
     context = state.context or {}
     retry_count = state.retry_count or 0
-    max_retry = 2
+    max_retry = 3  # 최대 2회 시도 (retry → planner → smart tool)
 
-    # ✅ 평가 대상 도구 목록
-    evaluatable_tools = {"recommend_diet_tool", "record_meal_tool"}
+    score_threshold = 70  # ✅ 점수 기준: 70점 이상이면 통과
 
-    # 1️⃣ 사용자 정보 저장 도구인 경우
-    if tool_name == "save_user_goal_and_diet_info" and "추출된 정보" in tool_result:
-        prompt = f"""
-        아래는 사용자의 입력과 저장된 정보야.
-        이 정도 정보면 식단 추천이 가능한가?
-
-        [사용자 입력]
-        {user_input}
-
-        [저장 결과]
-        {tool_result}
-
-        추가 정보가 더 필요하면 "planner"로 보내고,
-        충분하다면 "final"로 종료해줘.
-
-        형식: planner / final
-        """
-        response = llm.invoke([HumanMessage(content=prompt)]).content.strip().lower()
-        if response == "planner":
-            return state.copy(update={
-                "retry_count": retry_count + 1,
-                "agent_out": "ℹ️ 저장된 정보는 충분하지 않아 추가 질문 필요",
-                "context": {**context, "user_profile_saved": True}
-            })
-        return state.copy(update={
-            "agent_out": "✅ 사용자 정보 저장 완료 및 충분함",
-            "context": {**context, "user_profile_saved": True}
-        })
-    if state.tool_name == "record_meal_tool":
-        
+    # 1️⃣ 평가 없이 통과하는 예외 도구 (record_meal_tool)
+    if tool_name == "record_meal_tool":
         return state.copy(update={
             "agent_out": "✅ 식사 기록 도구는 평가 없이 완료됩니다.",
             "next_node": "refine"
         })
-    # ✅ 평가 대상이 아닌 도구일 경우 → 평가 생략
-    if tool_name not in evaluatable_tools:
-        return state.copy(update={
-            "agent_out": f"ℹ️ 평가 생략: {tool_name} 도구는 평가 대상이 아닙니다.",
-            "context": context
-        })
 
-    # 2️⃣ 피드백 도구 확인
-    feedback_tool = tool_map.get("diet_feedback_tool")
-    if not feedback_tool:
-        return state.copy(update={
-            "agent_out": "⚠️ 평가 도구(diet_feedback_tool)가 없어 결과를 그대로 반환합니다.",
-            "context": context
-        })
+    # 2️⃣ 평가 프롬프트 작성
+    prompt = f"""
+너는 AI 평가자야.
+아래는 사용자의 입력과 도구 실행 결과야.
 
-    # 3️⃣ 도구 피드백 평가
+[사용자 입력]
+{user_input}
+
+[도구 결과]
+{tool_result}
+
+이 결과가 사용자 입력에 대한 결과값으로  얼마나 적절한지 0~100점으로 평가해줘.
+
+[판단 기준]
+- 90점 이상: 매우 적절
+- 70~89점: 적절
+- 50~69점: 다소 부적절
+- 50점 미만: 부적절
+
+[응답 포맷]
+    ```json
+    {{
+    "score": (0~100 정수),
+    "reason": "간단한 이유"
+    }}
+    반드시 위 JSON 포맷으로만 응답해. """
     try:
-        feedback = feedback_tool.invoke({"params": {
-            "input": tool_result,
-            "member_id": member_id,
-            "context": context
-        }})
-        parsed_feedback = json.loads(feedback)
-        context["diet_feedback"] = feedback
+        # 3️⃣ LLM을 통한 평가
+        evaluation = llm.invoke([HumanMessage(content=prompt)]).content
+        parsed_eval = json.loads(extract_json_block(evaluation))
+        score = parsed_eval.get("score", 0)
+        reason = parsed_eval.get("reason", "")
 
-        # 3-1️⃣ 결과 부적절 → 재시도 or 플래너 or fallback
-        if not parsed_feedback.get("valid", True):
-            suggestion = parsed_feedback.get("suggestion", "")
+        # 평가 결과를 context에 저장
+        context["last_evaluation"] = {
+            "tool_name": tool_name,
+            "score": score,
+            "reason": reason
+        }
+
+        # 4️⃣ 점수로 판단
+        if score >= score_threshold:
+            # ✅ 점수 통과
+            return state.copy(update={
+                "agent_out": f"✅ 평가 통과 ({score}점): {reason}",
+                "context": context,
+                "next_node": "refine"
+            })
+
+        # 5️⃣ 점수 미달 → 재시도 흐름
+        suggestion_text = f"({reason})" if reason else "(추가 보완 필요)"
+
+        # 1차 재시도 (retry tool)
+        if retry_count == 0:
             retry_tool = tool_map.get(tool_name)
-            retry_input = parsed_plan.get("tool_input", {})
+            retry_input = parsed_plan.get("tool_input", {}).copy()
 
-            # 1차: 도구 재실행
-            if retry_count == 0 and retry_tool:
-                if isinstance(retry_input, dict):
-                    retry_input["input"] = retry_input.get("input", "") + f" ({suggestion})"
+            if retry_tool and isinstance(retry_input, dict):
+                retry_input["input"] = retry_input.get("input", "") + f" {suggestion_text}"
+
                 retry_result = retry_tool.invoke({"params": {
                     "input": retry_input,
                     "member_id": member_id,
                     "context": context
                 }})
+
                 return state.copy(update={
                     "retry_count": retry_count + 1,
-                    "context": context,
                     "tool_result": retry_result,
-                    "agent_out": f"🔁 재추천 실행됨 (1차)\n→ {retry_result}"
+                    "context": context,
+                    "agent_out": f"🔁 1차 재실행 완료 - {suggestion_text}"
                 })
 
-            # 2차: planner 재실행
-            if retry_count == 1:
-                return state.copy(update={
-                    "retry_count": retry_count + 1,
-                    "agent_out": "🧠 재시도 실패 → 전체 플래너 재실행",
-                    "next_node": "planner",
-                    "context": context
-                })
-
-            # 3차: LLM Fallback 응답
-            fallback_prompt = f"""
-            도구 결과가 충분하지 않아서 {max_retry}회 이상 재시도했지만 실패했어.
-
-            [사용자 입력]
-            {user_input}
-
-            [현재 context 정보]
-            {json.dumps(context, ensure_ascii=False)}
-
-            [도구 실행 결과]
-            {tool_result}
-
-            이 상황을 고려해서 LLM이 직접 사용자에게 적절한 응답을 생성해줘.
-            """
-            response = llm.invoke([HumanMessage(content=fallback_prompt)])
+        # 2차 재시도 (planner 호출)
+        if retry_count == 1:
             return state.copy(update={
-                "agent_out": f"🤖 도구 실패 → LLM이 직접 응답 생성\n→ {response.content.strip()}",
+                "retry_count": retry_count + 1,
+                "agent_out": "🧠 1차 재시도 실패 → 플래너로 돌아갑니다.",
+                "next_node": "planner",
                 "context": context
             })
 
-        # 3-2️⃣ 결과 적절
+        # 3차 재시도 (smart_nutrition_resolver 호출)
+        if retry_count >= max_retry:
+            smart_tool = tool_map.get("smart_nutrition_resolver")
+            if smart_tool:
+                smart_result = smart_tool.invoke({"params": {
+                    "input": user_input,
+                    "member_id": member_id,
+                    "context": context
+                }})
+                return state.copy(update={
+                    "agent_out": f"🔍 슈퍼 도구로 재시도 완료\n→ {smart_result}",
+                    "context": context
+                })
+
+        # 예외 대비 기본 반환
         return state.copy(update={
+            "agent_out": f"⚠️ 알 수 없는 상태. {retry_count}회 시도됨",
             "context": context
         })
 
     except Exception as e:
         return state.copy(update={
-            "agent_out": f"❌ 평가 또는 재시도 실패\n{str(e)}",
+            "agent_out": f"❌ 평가 실패 또는 JSON 파싱 오류: {str(e)}",
             "retry_count": retry_count + 1,
             "context": context
         })

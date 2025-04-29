@@ -21,5 +21,5 @@ class AgentState(BaseModel):
     final_output: Annotated[str, LastValue(str)] = ""
     context_missing: Annotated[List[str], LastValue(list)] = []
     error: Annotated[str, LastValue(str)] = ""
-
+    next_node: Annotated[Optional[str], LastValue(Optional[str])] = None
 

@@ -159,8 +159,7 @@ def web_search_and_summary(params: dict) -> str:
     """모르는건 웹 검색을 수행합니다."""
     query = params.get("user_input", "")
     retriever = TavilySearchAPIRetriever(k=3, tavily_api_key=os.getenv("TAVILY_API_KEY"))
-
-    docs = retriever.invoke(query)
+    docs = retriever.invoke(input=query) 
 
     prompt = PromptTemplate.from_template("""
     다음은 웹에서 검색한 결과입니다.
@@ -370,12 +369,36 @@ def lookup_nutrition_tool(params: dict) -> str:
             "query": {
                 "bool": {
                     "should": [
-                        {"match": {"name": {"query": food_name, "fuzziness": "AUTO"}}},
-                        {"match_phrase_prefix": {"name": {"query": food_name}}}
-                    ]
-                } 
+                        {
+                            "term": {
+                                "name_compact": {
+                                    "value": food_name.replace(" ", ""),
+                                    "boost": 30
+                                }
+                            }
+                        },
+                        {
+                            "match_phrase": {
+                                "name": {
+                                    "query": food_name,
+                                    "boost": 10  # 🔥 여기에는 fuzziness 제거!
+                                }
+                            }
+                        },
+                        {
+                            "multi_match": {
+                                "query": food_name,
+                                "type": "best_fields",
+                                "fields": ["name^1", "name._2gram^0.2", "name._3gram^0.1"],
+                                "fuzziness": "AUTO"  # ✅ 오타 허용은 여기서 처리!
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
+                }
+                }
             }
-        }
+
 
         results = es.search(index="food_nutrition_index", query=es_query["query"])
         hits = results["hits"]["hits"]
@@ -414,7 +437,8 @@ def lookup_nutrition_tool(params: dict) -> str:
 
         # Step 3: Elasticsearch 결과가 없거나 일치하지 않으면 Tavily + LLM 추론
         retriever = TavilySearchAPIRetriever(k=3, tavily_api_key=os.getenv("TAVILY_API_KEY"))
-        info = retriever.invoke(f"{food_name} 100g 칼로리 단백질 지방 탄수화물")
+        info = retriever.invoke(input=f"{food_name} 100g 칼로리 단백질 지방 탄수화물")
+
 
         if not info:
             # Step 4: Tavily에서 정보가 없으면 LLM을 통한 추론
@@ -1426,10 +1450,10 @@ def get_weight_from_inbody(member_id: int) -> float:
     sql = f"""
         SELECT i.weight, m.gender
         FROM member m
-        LEFT JOIN inbody i ON m.member_id = i.member_id
-        WHERE m.member_id = {member_id}
-        ORDER BY i.measured_at DESC NULLS LAST
-        LIMIT 1
+        LEFT JOIN inbody i ON m.id = i.member_id
+        WHERE m.id = {member_id}
+        ORDER BY i.date DESC NULLS LAST
+        LIMIT 1;
     """
     try:
         result = json.loads(execute_sql(sql))
@@ -1696,7 +1720,7 @@ def answer_general_nutrition_tool(params: dict) -> str:
     하루 권장량, 영양소 기준 등 일반 영양 정보를 LLM과 웹검색을 통해 설명합니다.
     """
     question = params.get("input") or params.get("question", "")
-    tavily_response = TavilySearchAPIRetriever(question);
+    tavily_response = TavilySearchAPIRetriever(input=[HumanMessage(content=question)]);
     web_summary = tavily_response.content
     
     prompt = f"""
@@ -1706,7 +1730,99 @@ def answer_general_nutrition_tool(params: dict) -> str:
     질문: {question}
     """
     return llm.invoke([HumanMessage(content=prompt)]).content.strip()
- 
+from typing import Dict
+from langchain.tools import tool
+from sentence_transformers import SentenceTransformer
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+
+# 모델과 Qdrant 설정
+MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+QDRANT_URL = "https://8e0111d6-2623-449d-88bf-528bffac93b5.us-east4-0.gcp.cloud.qdrant.io"
+QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.JvK7BVCdoCml7tlbYoH1aCXq-SO3JW79eLpUvAmFoW8"
+COLLECTION_NAME = "nutrition_kdri_table_rag"
+
+model = SentenceTransformer(MODEL_NAME)
+qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+def calculate_age(birth_date: str) -> int:
+    """생년월일을 기반으로 나이를 계산합니다."""
+    try:
+        birth_date = datetime.strptime(birth_date, "%Y-%m-%d")
+        today = datetime.today()
+        return today.year - birth_date.year
+    except Exception as e:
+        return 0
+
+@tool
+def query_nutrition_tool(params: dict) -> dict:
+    """
+    영양 기준 문서 기반으로 질문에 답변하는 RAG 검색 도구입니다.
+    """
+
+    try:
+        member_id = params.get("member_id", 1)
+        sql = f"select birth_date from member where id = {member_id}"
+        birth_date = execute_sql(sql)
+        birth_date = birth_date[0].get("birth_date")
+        age = calculate_age(birth_date)
+        question = params.get("question", "")
+        if not question:
+            return {"status": "❌ 질문이 제공되지 않았습니다."}
+
+        # 문장 임베딩
+        query_text = f"{age}세 기준으로: {question}"
+        query_vector = model.encode(query_text).tolist()
+
+        # Qdrant 검색
+        search_results = qdrant.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=5,
+            search_params=models.SearchParams(hnsw_ef=128, exact=False)
+        )
+
+        if not search_results:
+            return {"status": "❌ 관련 결과를 찾지 못했습니다."}
+
+        combined_text = ""
+        top_chunks = []
+        for res in search_results:
+            payload = res.payload or {}
+            combined_text += f"- {payload.get('text', '')}\n"
+            top_chunks.append({
+                "text": payload.get("text", ""),
+                "연령": payload.get("age_group"),
+                "성별": payload.get("gender"),
+                "영양소": payload.get("nutrient"),
+                "섭취유형": payload.get("intake_type"),
+                "수치": payload.get("recommended_intake")
+            })
+
+        summary_prompt = f"""
+        너는 한국 식단 기준 전문가야.
+        다음은 공식 문서(RAG 검색)에서 가져온 관련 내용이야:
+
+        [내용]
+        {combined_text}
+
+        이 정보를 요약해서, 질문 "{question}" 에 대해 정확하고 친절한 답변을 작성해줘.
+        특히 "연령", "성별", "권장 섭취량" 같은 숫자 기준이 있으면 명확히 써줘.
+        [내용]이 없다면  "{question}" 에 대해 정확하고 친절한 답변을 작성해줘.
+        """
+        evaluation = llm.invoke(input=[HumanMessage(content=summary_prompt)]).content
+
+        return {
+            "status": "✅ 성공",
+            "question": question,
+            "final_answer": evaluation,
+            "top_chunks": top_chunks
+        }
+
+    except Exception as e:
+        return {
+            "status": "❌ 오류 발생",
+            "error": str(e)
+        }
 @tool 
 def smart_nutrition_resolver(params: dict) -> str: 
     """ 
@@ -1719,7 +1835,7 @@ def smart_nutrition_resolver(params: dict) -> str:
         table_info = json.dumps(table_schema, ensure_ascii=False)
 
         def run_decision(prompt: str) -> dict:
-            raw = llm.invoke([HumanMessage(content=prompt)]).content
+            raw = llm.invoke(input=[HumanMessage(content=prompt)]).content
             return json.loads(extract_json_block(raw))
 
         # Step 1: 응답 방식 판단
@@ -1731,7 +1847,7 @@ def smart_nutrition_resolver(params: dict) -> str:
         - "sql": 질문이 DB에 저장된 정보를 기반으로 답변해야 하는 경우
         - "search": 최신 정보나 외부 지식이 필요한 경우
         - "llm": 일반 상식이나 유추 가능한 경우, LLM만으로 충분한 경우
-
+        - "rag": 남성과 여성에 연령대별 영양정보비율이 필요할떄떄
         [출력 형식]
         - action: 선택한 방식 (sql / search / llm 중 하나)
         - reason: 왜 그렇게 판단했는지 간결한 설명
@@ -1789,13 +1905,23 @@ def smart_nutrition_resolver(params: dict) -> str:
             [테이블 스키마]
             {table_info}
             """
-            sql = llm.invoke([HumanMessage(content=sql_prompt)]).content.strip()
+            sql = llm.invoke(input=[HumanMessage(content=sql_prompt)]).content.strip()
             result = execute_sql(sql)
             intermediate_result = json.dumps(result, ensure_ascii=False)
             data_source = "sql"
-
+        elif action == "rag":
+            rag_answer = query_nutrition_tool.invoke({"question": question})
+            rag_result = json.loads(rag_answer)
+            return json.dumps({
+                "source": "rag",
+                "final_answer": rag_result.get("final_answer", ""),
+                "reason": reason,
+                "confidence": confidence
+            }, ensure_ascii=False, indent=2)
         elif action == "search":
-            search_result = TavilySearchAPIRetriever.invoke(question)
+            retriever = TavilySearchAPIRetriever()
+            search_query = question if isinstance(question, str) else str(question)  # ✅ 텍스트로 강제 변환
+            search_result = retriever.invoke(input=search_query)
             summary_prompt = f"""
             [사용자 질문]
             {question}
@@ -1805,7 +1931,7 @@ def smart_nutrition_resolver(params: dict) -> str:
 
             위 내용을 바탕으로 요약 + 설명 + 링크를 포함한 응답을 자연스럽게 작성해줘.
             """
-            refined = llm.invoke([HumanMessage(content=summary_prompt)]).content.strip()
+            refined = llm.invoke(input=[HumanMessage(content=summary_prompt)]).content.strip()
             return json.dumps({
                 "source": "web",
                 "final_answer": refined,
@@ -1829,7 +1955,7 @@ def smart_nutrition_resolver(params: dict) -> str:
 
             ⚠️ 기준이 없으면 "일반적인 경향"으로 설명해줘.
             """
-            refined = llm.invoke([HumanMessage(content=llm_prompt)]).content.strip()
+            refined = llm.invoke(input=[HumanMessage(content=llm_prompt)]).content.strip()
             return json.dumps({
                 "source": "llm",
                 "final_answer": refined,
@@ -1845,7 +1971,7 @@ def smart_nutrition_resolver(params: dict) -> str:
 
         위 정보를 바탕으로 한국 기준으로 자연스럽고 정확한 식단/영양 응답을 작성해줘.
         """
-        refined = llm.invoke([HumanMessage(content=refine_prompt)]).content.strip()
+        refined = llm.invoke(input=[HumanMessage(content=refine_prompt)]).content.strip()
 
         return json.dumps({
             "source": data_source,

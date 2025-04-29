@@ -27,7 +27,7 @@ def connect_db():
 
 def connect_es():
     global es
-    es = Elasticsearch("http://localhost:9200")
+    es = Elasticsearch("http://elasticsearch:9200")
 
 # ✅ 인덱스 재생성 (자동완성 + 오타 대응 설정 포함)
 def recreate_elasticsearch_index():
@@ -38,18 +38,19 @@ def recreate_elasticsearch_index():
         index_settings = {
             "settings": {
                 "analysis": {
-                    "filter": {
-                        "autocomplete_filter": {
+                    "tokenizer": {
+                        "edge_ngram_tokenizer": {
                             "type": "edge_ngram",
-                            "min_gram": 1,
-                            "max_gram": 20
+                            "min_gram": 2,
+                            "max_gram": 20,
+                            "token_chars": ["letter", "digit", "whitespace"]
                         }
                     },
                     "analyzer": {
-                        "autocomplete_analyzer": {
+                        "edge_ngram_analyzer": {
                             "type": "custom",
-                            "tokenizer": "standard",
-                            "filter": ["lowercase", "autocomplete_filter"]
+                            "tokenizer": "edge_ngram_tokenizer",
+                            "filter": ["lowercase"]
                         }
                     }
                 }
@@ -59,17 +60,34 @@ def recreate_elasticsearch_index():
                     "id": {"type": "integer"},
                     "name": {
                         "type": "text",
-                        "analyzer": "autocomplete_analyzer",
-                        "search_analyzer": "standard"
+                        "fields": {
+                            "keyword": {
+                                "type": "keyword",
+                                "ignore_above": 256
+                            },
+                            "_2gram": {
+                                "type": "text",
+                                "analyzer": "edge_ngram_analyzer",
+                                "search_analyzer": "standard"
+                            },
+                            "_3gram": {
+                                "type": "text",
+                                "analyzer": "edge_ngram_analyzer",
+                                "search_analyzer": "standard"
+                            }
+                        }
+                    },
+                    "name_compact": {
+                        "type": "keyword"  # 공백 제거 매칭 대비용
                     }
                 }
             }
         }
 
         es.indices.create(index=index_name, body=index_settings)
-        return {"message": "✅ Elasticsearch 인덱스 재생성 완료!"}
+        return {"message": "✅ Elasticsearch 인덱스 고도화 버전 생성 완료!"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Elasticsearch 인덱스 재생성 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Elasticsearch 인덱스 생성 실패: {str(e)}")
 
 from elasticsearch.helpers import bulk
 # ✅ 음식명 전체 동기화
@@ -83,7 +101,11 @@ def sync_food_names_to_elasticsearch():
             {
                 "_index": index_name,
                 "_id": id,
-                "_source": {"id": id, "name": name}
+                "_source": {
+                    "id": id,
+                    "name": name,
+                    "name_compact": name.replace(" ", "")  # 공백 제거 버전 추가
+                }
             }
             for id, name in rows
         ]

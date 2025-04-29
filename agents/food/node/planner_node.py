@@ -23,7 +23,9 @@ def refine_planning_prompt(user_input: str, context: Dict[str, Any], table_schem
 → 음식 리스트 추천인지, 하루 식단 추천인지 명확히 판단해야 해.
 
  
-
+질문이 다음 중 어디에 해당하는지 판단해:
+1. DB에서 사용자 정보를 직접 확인하는 경우 → sql_query_runner
+2. 영양 지식 기반 설명/판단이 필요한 경우 → smart_nutrition_resolver
 - "단백질 위주로 먹고 싶은데", "고단백 식단 추천해줘", "단백질 위주 식단 짜줘"처럼 **식단 구성이 목적**이면
 → `recommend_diet_tool` 실행 (goal을 고단백으로 판단)
 

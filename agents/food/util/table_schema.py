@@ -1,9 +1,9 @@
 # make/make2/util/table_schema.py
 table_schema = {
-  "emmber": {
+  "member": {
     "description": "사용자 정보 테이블",
     "columns": {
-      "member_id": "사용자 고유 ID (PK)",
+      "id": "사용자 고유 ID (PK)",
       "name": "사용자 이름",
       "goal": "건강/식단 목표",
       "phone": "연락처",
@@ -102,7 +102,7 @@ table_schema = {
       "food_preferences": "선호 음식",
       "meal_pattern": "식사 패턴",
       "special_requirements": "특별 요구 사항",
-      "food_avoidances": "거부 음식"
+      "food_avoidance": "거부 음식"
     }
   }
 }

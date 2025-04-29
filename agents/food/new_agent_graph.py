@@ -20,16 +20,17 @@ from agents.food.node.retry_node import retry_node
 
 # ✅ 그래프 정의
 graph = StateGraph(AgentState)
-
 # ✅ 노드 등록
 graph.add_node("planner", planner_node)
 graph.add_node("ask_user_node", ask_user_node)
 graph.add_node("tool_executor", tool_executor_node)
 graph.add_node("retry", retry_node)
 graph.add_node("refine", refine_node)
+
 # ✅ 진입점
 graph.set_entry_point("planner")
- 
+
+# ✅ planner → 다음 노드 조건 분기
 graph.add_conditional_edges(
     "planner",
     lambda state: (
@@ -45,32 +46,32 @@ graph.add_conditional_edges(
             not state.parsed_plan.get("need_tool") and
             state.parsed_plan.get("final_output")
         )
-        else "refine"  # 혹시나 예외 상황에도 안전하게
+        else "refine"
     )
 )
 
-
-
+# ✅ tool_executor → 다음 노드 분기
 graph.add_conditional_edges(
     "tool_executor",
     lambda state: (
-        # 저장 완료 안 됐으면 다시 planner 로
-        "planner"
-        if state.parsed_plan.get("tool_name") == "save_user_goal_and_diet_info"
-        and not state.context.get("user_profile_saved")
-        else "retry"
+        "retry"
+        if state.parsed_plan.get("tool_name") not in ["record_meal_tool"]
+        else "refine"
     )
 )
-# ✅ 실행 흐름 연결
-graph.add_edge("tool_executor", "retry")
-graph.add_edge("retry", "refine")
+
+# ✅ retry → next_node 필드 기반 분기
+graph.add_conditional_edges(
+    "retry",
+    lambda state: state.next_node if state.next_node else "refine"
+)
 
 # ✅ 종료 지점 설정
-graph.set_finish_point("ask_user_node")  # 질문만 있을 때 종료
-graph.set_finish_point("refine")  
+graph.set_finish_point("ask_user_node")
+graph.set_finish_point("refine")
+
 # ✅ 컴파일
 compiled_graph = graph.compile()
-
 # ✅ 실행 함수
 async def run_super_agent(user_input: str, member_id: int, user_info: Optional[Dict[str, Any]] = None):
     # user_info가 None이면 빈 딕셔너리로 초기화
